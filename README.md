@@ -30,7 +30,7 @@
 - 本地安装
     - "../dust_utils[core]"是本地路径
     - [core]删除后表示安装基础工具，可改为指定模块的名称
-    - 模块名称在**pyproject.toml**下的**project.
+    - 模块名称在**pyproject.toml**下的**project.optional-dependencies**
     ```bash
     uv add --editable "../dust_utils[core]"
     ```
@@ -53,7 +53,7 @@ python -c "import sys; print(sys.version)"
 - 只有 pyproject.toml 的依赖发生变化时，才需在相关项目中重新运行安装命令。
 - 建议按需导入模块，例如：
 ```python
-from dust_utils.logger_setup import setup_logger
+from dust_utils import setup_logger
 from dust_utils.ai_utils.ai_chat import AIChat
 ```
 这样可以避免加载不必要的第三方库。
