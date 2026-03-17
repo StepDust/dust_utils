@@ -25,6 +25,9 @@
 ### 本地引用的图片
 ![本地引用](E:\Share\dust_utils\test_config\md_to_config\本地.png)
 
+### 竖图测试
+![竖图测试](E:\Share\dust_utils\test_config\md_to_config\竖图.png)
+
 ### URL引用的图片
 ![URL引用](https://rhlt-file-bed.oss-cn-hangzhou.aliyuncs.com/jjkc/URL.png)
 
