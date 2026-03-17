@@ -23,6 +23,8 @@ mysql = [
 ]
 wx = ["wxPython"]
 md = ['markdown-it-py', 'python-docx', 'pillow']
+wps = ["pywin32", "PyPDF2"]
+
 
 [tool.setuptools.packages.find]
 where = ["src"] # 源码目录

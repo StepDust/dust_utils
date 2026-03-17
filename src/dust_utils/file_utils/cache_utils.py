@@ -46,8 +46,8 @@ class CacheUtils:
         try:
             with open(json_path, "w", encoding="utf-8") as f:
                 json.dump(data_result, f, ensure_ascii=False, indent=4)
-        except Exception:
-            logger.exception(f"缓存 JSON 写入失败：{json_path}")
+        except Exception as e:
+            logger.error(f"缓存 JSON 写入失败：{json_path}, 错误：{e}")
 
         return data_result
 

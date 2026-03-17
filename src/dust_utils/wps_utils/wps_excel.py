@@ -1,5 +1,5 @@
-from .office_base import OfficeBase, auto_before_call
-from .office_utils import OfficeUtils
+from .wps_base import WPSBase, auto_before_call
+from .wps_utils import WPSUtils
 
 import os
 import logging
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 @auto_before_call(before_func="available")
-class ExcelUtils(OfficeBase):
+class WPSExcel(WPSBase):
     def __init__(
         self,
         file_path: str,
@@ -485,7 +485,7 @@ class ExcelUtils(OfficeBase):
         target_range = ws.worksheet.Range(f"{start_cell}:{end_cell}")
 
         # 规范二维数组每行长度一致
-        data = OfficeUtils.normalize_row_lengths(data)
+        data = WPSUtils.normalize_row_lengths(data)
 
         # 一次性写入数据
         target_range.Value = data
@@ -521,7 +521,7 @@ class ExcelUtils(OfficeBase):
                     if cell_value.startswith("="):
                         cell.Borders.Color = self.border_color
                     # 如果是日期，作为文本显示
-                    is_date, date_format = OfficeUtils.get_date_format(cell_value)
+                    is_date, date_format = WPSUtils.get_date_format(cell_value)
                     if is_date:
                         cell.NumberFormat = date_format
 
@@ -554,7 +554,7 @@ class ExcelUtils(OfficeBase):
         target_range = ws.worksheet.Range(f"{start_cell}:{end_cell}")
 
         # 解析颜色
-        rgb_color = OfficeUtils.hex_to_bgr(color)
+        rgb_color = WPSUtils.hex_to_bgr(color)
 
         # 设置背景颜色
         target_range.Interior.Color = rgb_color
@@ -620,8 +620,8 @@ class ExcelUtils(OfficeBase):
         ws = self.get_sheet(sheet_name).worksheet
         cell_range = f"{start_cell}:{end_cell}"
 
-        bg_color = OfficeUtils.hex_to_bgr(background_color)
-        ft_color = OfficeUtils.hex_to_bgr(font_color)
+        bg_color = WPSUtils.hex_to_bgr(background_color)
+        ft_color = WPSUtils.hex_to_bgr(font_color)
 
         # 删除同区域旧规则，避免叠加
         try:
@@ -752,7 +752,7 @@ class ExcelUtils(OfficeBase):
         max_col_length = max(len(row) if row else 0 for row in data)
         end_col_num = start_col + max(max_col_length - 1, 0) + add_col_count
 
-        end_col_letter = ExcelUtils.col_num_to_letter(end_col_num)
+        end_col_letter = WPSExcel.col_num_to_letter(end_col_num)
         return f"{end_col_letter}{end_row}"
 
     @staticmethod
@@ -1121,7 +1121,7 @@ class WorksheetWrapper:
                     try:
                         # 用 Excel 的格式字符串将 datetime 转为 str
                         data[i][j] = value.strftime(
-                            OfficeUtils.excel_format_to_python(fmt)
+                            WPSUtils.excel_format_to_python(fmt)
                         )
                     except Exception:
                         # 转换失败时退化为默认字符串

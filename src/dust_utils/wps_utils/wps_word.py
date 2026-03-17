@@ -1,5 +1,5 @@
-from .office_base import OfficeBase, auto_before_call
-from .office_utils import OfficeUtils
+from .wps_base import WPSBase, auto_before_call
+from .wps_utils import WPSUtils
 
 import os
 import logging
@@ -20,7 +20,7 @@ WD_PREFERRED_WIDTH_POINTS = 2
 
 
 @auto_before_call(before_func="available")
-class WPSWord(OfficeBase):
+class WPSWord(WPSBase):
     """
     Word/WPS文档操作类，基于COM接口实现。
     提供表格操作、段落操作、页面设置等功能。
@@ -350,9 +350,7 @@ class WPSWord(OfficeBase):
             anchor_cell = None  # 记录最近的非空单元格
             for row_idx in range(1, row_count + 1):
                 cell = table.Cell(row_idx, col_idx)
-                value = OfficeUtils.remove_non_printable(
-                    cell.Range.Text.strip()
-                ).strip()
+                value = WPSUtils.remove_non_printable(cell.Range.Text.strip()).strip()
                 if value:  # 非空
                     anchor_cell = cell
                 else:  # 空单元格
@@ -552,7 +550,7 @@ class WPSWord(OfficeBase):
         logger.info(f"段落信息: {para_info}")
         return para_info
 
-    def set_pars_text(self, para, text: str):
+    def set_para_text(self, para, text: str):
         """
         安全替换段落或单元格文本，不破坏样式结构。
 
@@ -565,11 +563,11 @@ class WPSWord(OfficeBase):
         end = para.Range.End
 
         # 去除不可见字符、左右空格等
-        text = OfficeUtils.remove_non_printable(text).strip()
+        text = WPSUtils.remove_non_printable(text).strip()
 
-        # 删除段落内容，但保留段落结束符（¶）
+        # 删除段落内容，但保留段落起始&结束符，用于保留段落样式
         if end > start:
-            doc.Range(start, end - 1).Delete()
+            doc.Range(start + 1, end - 1).Delete()
 
         # 在段落开头插入新文本（保留原样式、run结构）
         insert_point = doc.Range(start, start)

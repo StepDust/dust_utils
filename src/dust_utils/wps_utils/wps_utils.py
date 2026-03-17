@@ -6,7 +6,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-class OfficeUtils:
+class WPSUtils:
 
     @staticmethod
     def excel_format_to_python(fmt: str) -> str:

@@ -1,0 +1,69 @@
+{
+    "default": {
+        "h1": {
+            "font_name": "微软雅黑",
+            "font_size": 16,
+            "font_color": "#000000",
+            "bold": true,
+            "underline": false,
+            "italic": false,
+            "align": "left",
+            "line_spacing": 1.5,
+            "space_before": 0,
+            "space_after": 0,
+            "first_line_indent": 0
+        },
+        "h2": {
+            "font_name": "微软雅黑",
+            "font_size": 14,
+            "font_color": "#000000",
+            "bold": true,
+            "underline": false,
+            "italic": false,
+            "align": "left",
+            "line_spacing": 1.5,
+            "space_before": 0,
+            "space_after": 0,
+            "first_line_indent": 0
+        },
+        "h3": {
+            "font_name": "微软雅黑",
+            "font_size": 11,
+            "font_color": "#000000",
+            "bold": true,
+            "underline": false,
+            "italic": false,
+            "align": "left",
+            "line_spacing": 1.5,
+            "space_before": 0,
+            "space_after": 0,
+            "first_line_indent": 0
+        },
+        "text": {
+            "font_name": "微软雅黑",
+            "font_size": 11,
+            "font_color": "#000000",
+            "bold": false,
+            "underline": false,
+            "italic": false,
+            "align": "left",
+            "line_spacing": 1,
+            "space_before": 0,
+            "space_after": 0,
+            "first_line_indent": 2
+        },
+        "li": {
+            "font_name": "微软雅黑",
+            "font_size": 11,
+            "font_color": "#000000",
+            "bold": false,
+            "underline": false,
+            "italic": false,
+            "align": "left",
+            "line_spacing": 1,
+            "space_before": 0,
+            "space_after": 0,
+            "first_line_indent": 4
+        }
+    }
+}

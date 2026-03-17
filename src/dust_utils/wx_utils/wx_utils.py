@@ -8,6 +8,7 @@ import logging
 from ..logger_setup import ColorFormatter
 from .mini_alert import MiniAlert
 import random
+import json
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -38,6 +39,7 @@ class WxUtils:
         self.text_ctrls = []
         self.btn_ctrls = []
         self.choice_ctrls = []
+        self.multicheck_ctrls = []
 
         # 设置光标
         self.normal_cursor = wx.Cursor(wx.CURSOR_HAND)
@@ -392,6 +394,205 @@ class WxUtils:
 
         return choice_ctrl, btn
 
+    def create_multicheck_ctrl(
+        self,
+        sizer,
+        row,
+        parent=None,
+        btn_text="",
+        btn_event=None,
+        row_height=None,
+        text_width=None,
+        label_width=None,
+        btn_width=None,
+        gap=None,
+        check_event=None,
+    ):
+        """
+        创建一个标签 + 多选列表框 + （可选）按钮 的行布局。
+
+        保存格式：JSON 数组，例如 ["日志记录", "暗色主题"]
+
+        :param sizer: 主布局器
+        :param row: 行配置字典，包含 'config_key', 'title', 'options', 'name' 等
+        :param parent: 父面板（默认从 sizer 获取）
+        :param btn_text: 右侧按钮文字（可选）
+        :param btn_event: 按钮点击回调（可选）
+        :param row_height: 行高度（多选建议较高）
+        :param text_width: 多选框宽度
+        :param label_width: 标签宽度
+        :param btn_width: 按钮宽度
+        :param gap: 元素间距
+        :param check_event: 勾选变化时的额外回调（可选）
+        :return: (wx.CheckListBox, wx.Button or None)
+        """
+
+        # 参数默认值
+        if row_height is None:
+            row_height = (
+                int(self.row_height * 3.2) if hasattr(self, "row_height") else 120
+            )
+        if text_width is None:
+            text_width = self.text_width if hasattr(self, "text_width") else 220
+        if label_width is None:
+            label_width = self.label_width if hasattr(self, "label_width") else 120
+        if btn_width is None:
+            btn_width = self.btn_width if hasattr(self, "btn_width") else 80
+        if gap is None:
+            gap = self.gap if hasattr(self, "gap") else 8
+        if parent is None:
+            parent = sizer.GetContainingWindow()
+
+        # 提取 row 配置
+        name = row.get("name", "").strip()
+        config_key = row.get("config_key", "").strip()
+        title = row.get("title", "")
+        options = row.get("options", []) or []
+
+        if not name:
+            name = config_key
+
+        if not config_key and not name:
+            wx.MessageBox(
+                f"渲染多选框时【{title}】的 config_key 或 name 不能为空",
+                "配置错误",
+                wx.OK | wx.ICON_ERROR,
+            )
+            return None, None
+
+        # 创建行容器
+        row_panel = wx.Panel(parent, size=(-1, row_height))
+        row_panel.SetMinSize((-1, row_height))
+        if hasattr(self, "get_test_color"):
+            row_panel.SetBackgroundColour(self.get_test_color(parent))
+
+        row_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        row_panel.SetSizer(row_sizer)
+
+        # 标签
+        label = wx.StaticText(row_panel, label=title, style=wx.ALIGN_RIGHT)
+        label.SetMinSize((label_width, -1))
+        row_sizer.Add(label, 0, wx.ALIGN_TOP | wx.RIGHT | wx.TOP, int(gap / 2))
+
+        # 多选框容器 + CheckListBox
+        check_container = wx.Panel(row_panel, size=(text_width, row_height))
+        check_container.SetMinSize((text_width, row_height))
+
+        vsizer = wx.BoxSizer(wx.VERTICAL)
+        checklist = wx.CheckListBox(
+            check_container,
+            choices=[str(x) for x in options],
+            style=wx.LB_NEEDED_SB,  # 显示滚动条
+        )
+
+        vsizer.AddStretchSpacer(1)
+        vsizer.Add(checklist, 1, wx.EXPAND | wx.LEFT | wx.RIGHT, 4)
+        vsizer.AddStretchSpacer(1)
+        check_container.SetSizer(vsizer)
+
+        row_sizer.Add(check_container, 0, wx.ALIGN_TOP | wx.RIGHT, gap)
+
+        # ─────────────── 恢复已保存的勾选状态 ───────────────
+        checked_indices = []
+        if config_key and hasattr(self, "config") and self.config:
+            saved_json = self.config.Read(config_key, "[]")
+            try:
+                saved_list = json.loads(saved_json)
+                if not isinstance(saved_list, list):
+                    saved_list = []
+            except (json.JSONDecodeError, TypeError):
+                saved_list = []
+
+            # 匹配选项（字符串比较，更稳健）
+            for i, opt in enumerate(options):
+                if str(opt) in [str(item) for item in saved_list]:
+                    checked_indices.append(i)
+
+        # 设置初始勾选
+        for idx in checked_indices:
+            checklist.Check(idx)
+
+        # ─────────────── 勾选变化时保存 ───────────────
+        def _on_checklist_changed(event):
+            # 方法1：使用列表推导式（推荐，简洁高效）
+            checked_items = [
+                checklist.GetString(i)
+                for i in range(checklist.GetCount())
+                if checklist.IsChecked(i)
+            ]
+
+            # 方法2：使用循环（更显式，容易加调试或额外逻辑）
+            # checked_items = []
+            # for i in range(checklist.GetCount()):
+            #     if checklist.IsChecked(i):
+            #         checked_items.append(checklist.GetString(i))
+
+            # 转为 JSON 字符串保存（ensure_ascii=False 防止中文乱码）
+            value_json = json.dumps(checked_items, ensure_ascii=False)
+
+            # 保存到配置
+            if hasattr(self, "config") and self.config and config_key:
+                self.config.Write(config_key, value_json)
+                self.config.Flush()  # 立即写入磁盘
+
+            # 可选：打印调试信息（开发时用，正式可删除）
+            # print(f"保存 {config_key}: {checked_items}")
+
+            # 如果你有通用处理函数
+            if hasattr(self, "on_checklist_change"):
+                self.on_checklist_change(
+                    event, checklist, config_key, checked_items=checked_items
+                )
+
+            # 如果传入了自定义回调
+            if check_event:
+                check_event(event)
+
+        # ─────────────── 点击选项任意位置都 toggle 勾选 ───────────────
+        def _on_left_down(event):
+            x, y = event.GetPosition()
+
+            item = checklist.HitTest((x, y))  # ← 只接收一个返回值
+
+            if item != wx.NOT_FOUND:
+                checked = checklist.IsChecked(item)
+                checklist.Check(item, not checked)
+
+                # 手动触发事件（保持保存逻辑正常执行）
+                fake_event = wx.CommandEvent(wx.wxEVT_CHECKLISTBOX, checklist.GetId())
+                fake_event.SetInt(item)
+                fake_event.SetEventObject(checklist)
+                checklist.GetEventHandler().ProcessEvent(fake_event)
+
+                # 可选：高亮该行
+                checklist.SetSelection(item)
+
+        checklist.Bind(wx.EVT_LEFT_DOWN, _on_left_down)
+
+        checklist.Bind(wx.EVT_CHECKLISTBOX, _on_checklist_changed)
+
+        # 记录控件（方便后续查找/统一管理）
+        self.multicheck_ctrls.append({"ctrl": checklist, "name": name})
+
+        # 可选右侧按钮
+        btn = None
+        if btn_text:
+            btn = wx.Button(row_panel, label=btn_text, size=(btn_width, -1))
+            if hasattr(self, "normal_cursor"):
+                btn.SetCursor(self.normal_cursor)
+            if btn_event:
+                btn.Bind(wx.EVT_BUTTON, btn_event)
+            row_sizer.Add(btn, 0, wx.ALIGN_TOP)
+
+            if not hasattr(self, "btn_ctrls"):
+                self.btn_ctrls = []
+            self.btn_ctrls.append({"ctrl": btn, "name": name})
+
+        # 把整行加到外面传进来的 sizer
+        sizer.Add(row_panel, 0, wx.TOP | wx.EXPAND, gap)
+
+        return checklist, btn
+
     def create_hr(
         self, sizer, parent=None, gap=None, color=wx.Colour(47, 54, 60), border=0
     ):
@@ -726,6 +927,18 @@ class WxUtils:
                 return item["ctrl"]
         return None
 
+    def get_multicheck_ctrl(self, name):
+        """
+        获取指定配置键的多选框控件。
+
+        :param config_key: 配置键
+        :return: 多选框控件
+        """
+        for item in self.multicheck_ctrls:
+            if item["name"] == name:
+                return item["ctrl"]
+        return None
+
     def get_btn_ctrl(self, name):
         """
         获取指定配置键的按钮控件。
@@ -734,18 +947,6 @@ class WxUtils:
         :return: 按钮控件
         """
         for item in self.btn_ctrls:
-            if item["name"] == name:
-                return item["ctrl"]
-        return None
-
-    def get_choice_ctrl(self, name):
-        """
-        获取指定名称的下拉框控件。
-
-        :param name: 控件名称
-        :return: 下拉框控件
-        """
-        for item in self.choice_ctrls:
             if item["name"] == name:
                 return item["ctrl"]
         return None

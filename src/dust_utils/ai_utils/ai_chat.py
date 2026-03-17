@@ -413,6 +413,15 @@ class AIChat:
 
         return code
 
+    def print_statistics(self):
+        """
+        输出当前对话的使用情况统计，包括使用的Token数量、金额、响应时间、AI模型和baseURL等信息
+        """
+        logger.info(
+            f"\nAI模型：{self.model}\t总响应时间：{self.useTime:.2f}秒\t总Token：{self.useToken}\t总金额: {(self.price):.6f}元\t总次数: {(self.sendCount)}",
+            extra={"color": "#ff5722"},
+        )
+
     def check_credits(self):
         """
         检查当前账户余额

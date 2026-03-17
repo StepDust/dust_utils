@@ -49,7 +49,7 @@ def auto_before_call(before_func, skip_names=None):
     return decorator
 
 
-class OfficeBase:
+class WPSBase:
     def __init__(self, file_path: str, prog_id: str, is_debug: bool = False):
         """
         初始化 OfficeBase 类，启动指定的 office 应用程序。

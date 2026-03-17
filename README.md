@@ -22,17 +22,21 @@
 
 ## 安装 dust_utils 库
 - git安装
-    - [core]删除后表示安装整个库，可改为指定模块的名称
+    - [core]删除后表示安装基础工具，可改为指定模块的名称
     - 模块名称在**pyproject.toml**下的**project.optional-dependencies**
     ```bash
     uv add "dust_utils[core] @ git+https://github.com/StepDust/dust_utils.git"
     ```
 - 本地安装
     - "../dust_utils[core]"是本地路径
-    - [core]删除后表示安装整个库，可改为指定模块的名称
+    - [core]删除后表示安装基础工具，可改为指定模块的名称
     - 模块名称在**pyproject.toml**下的**project.
     ```bash
     uv add --editable "../dust_utils[core]"
+    ```
+- dust_utils项目下调试模块
+    ```bash
+    uv pip install -e ".[core]"
     ```
 
 ## 输出解释器路径
@@ -55,7 +59,7 @@ from dust_utils.ai_utils.ai_chat import AIChat
 这样可以避免加载不必要的第三方库。
 
 
-## 常用模块
+## 常用模块，仅作记录
 - **pipreqs**
    - 用于自动生成 requirements.txt 文件，包含项目所有依赖（包括直接和间接依赖）。
    - 安装：`pip install pipreqs`
@@ -86,7 +90,7 @@ from dust_utils.ai_utils.ai_chat import AIChat
    - 安装：`pip install playwright`
    - 使用：在 Python 脚本中导入 `import playwright` 即可开始使用。
 
-## spec移除打包依赖
+## spec移除打包依赖，仅作记录
 - pywin32
 - Pillow
 - mermaid-py
