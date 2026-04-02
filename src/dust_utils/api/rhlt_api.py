@@ -11,15 +11,6 @@ from .api_utils import ApiUtils
 logger = logging.getLogger(__name__)
 
 
-# 禁用所有代理设置，确保直接连接
-os.environ.pop("HTTP_PROXY", None)
-os.environ.pop("HTTPS_PROXY", None)
-os.environ.pop("http_proxy", None)
-os.environ.pop("https_proxy", None)
-os.environ["NO_PROXY"] = "*"
-os.environ.pop("ALL_PROXY", None)
-
-
 class RHLTAPI:
     def __init__(self, token_str: str):
         """
@@ -28,6 +19,14 @@ class RHLTAPI:
         :param token_str: 用于API请求的授权令牌字符串，用于身份验证。
         :raises ValueError: 如果token_str为空，则抛出此异常。
         """
+        # 禁用所有代理设置，确保直接连接
+        os.environ.pop("HTTP_PROXY", None)
+        os.environ.pop("HTTPS_PROXY", None)
+        os.environ.pop("http_proxy", None)
+        os.environ.pop("https_proxy", None)
+        os.environ["NO_PROXY"] = "*"
+        os.environ.pop("ALL_PROXY", None)
+
         if not token_str:
             raise ValueError("请求api时，token不能为空")
         self.token_str = token_str  # 存储token

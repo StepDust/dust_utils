@@ -180,3 +180,93 @@ class ZipUtils:
                 except Exception as e:
                     logger.error(f"添加文件 {file_path} 到zip失败: {str(e)}")
                     raise
+
+    @staticmethod
+    def zip_folder(source_path: str, zip_path: str, is_delete: bool = False):
+        """
+        将单个文件或整个文件夹打包成 zip 压缩包
+        - 压缩文件夹时：文件夹内的内容直接放在 zip 根目录（不额外嵌套一层文件夹）
+        - 压缩单个文件时：文件直接放在 zip 根目录
+
+        Args:
+            source_path (str): 要压缩的源路径（可以是单个文件或文件夹）
+            zip_path (str): 输出 zip 文件的完整路径（含文件名）
+            is_delete (bool, optional): 如果目标 zip 已存在，是否先删除。默认为 False
+
+        Raises:
+            FileNotFoundError: 当 source_path 不存在时
+        """
+        if not os.path.exists(source_path):
+            logger.error(f"要压缩的路径不存在: {source_path}")
+            raise FileNotFoundError(f"要压缩的路径不存在: {source_path}")
+
+        # 处理目标 zip 已存在的情况
+        if os.path.exists(zip_path):
+            if is_delete:
+                try:
+                    os.remove(zip_path)
+                    logger.info(f"已删除已存在的 zip 文件: {zip_path}")
+                except Exception as e:
+                    logger.error(f"删除已存在 zip 文件失败: {e}")
+                    raise
+            else:
+                logger.warning(f"目标 zip 文件已存在，将被覆盖: {zip_path}")
+
+        # 确保输出目录存在
+        os.makedirs(os.path.dirname(zip_path), exist_ok=True)
+
+        try:
+            with zipfile.ZipFile(
+                zip_path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9
+            ) as zip_ref:
+                source_path = os.path.abspath(source_path)
+
+                if os.path.isfile(source_path):
+                    # ==================== 单个文件 ====================
+                    arcname = os.path.basename(source_path)
+                    zip_ref.write(source_path, arcname)
+                    logger.info(f"已打包单个文件: {arcname} → {zip_path}")
+
+                elif os.path.isdir(source_path):
+                    # ==================== 整个文件夹（扁平化处理） ====================
+                    logger.info(
+                        f"正在打包文件夹（内容直接置于 zip 根目录）: {source_path}"
+                    )
+
+                    for root, dirs, files in os.walk(source_path):
+                        # 计算相对路径（去掉 source_path 这一层）
+                        rel_root = os.path.relpath(root, source_path)
+
+                        # 添加目录（保留子目录结构，但不在最外层多一层）
+                        if rel_root != ".":
+                            for dir_name in dirs:
+                                dir_path = os.path.join(root, dir_name)
+                                arc_dir = os.path.join(rel_root, dir_name)
+                                zip_ref.write(dir_path, arc_dir)  # 写入空目录
+
+                        # 添加文件
+                        for file in files:
+                            file_path = os.path.join(root, file)
+                            # 如果在根目录，arcname 就是文件名；否则保留相对子路径
+                            arcname = (
+                                file
+                                if rel_root == "."
+                                else os.path.join(rel_root, file)
+                            )
+                            zip_ref.write(file_path, arcname)
+
+                    logger.info(f"文件夹内容已直接打包到 zip 根目录 → {zip_path}")
+
+                else:
+                    raise ValueError(f"不支持的路径类型: {source_path}")
+
+        except Exception as e:
+            logger.error(f"打包 zip 失败: {str(e)}")
+            if os.path.exists(zip_path):
+                try:
+                    os.remove(zip_path)
+                except:
+                    pass
+            raise
+
+        logger.success(f"压缩完成 → {zip_path}")

@@ -1,6 +1,6 @@
 [project]
 name = "dust_utils" # 建议改成你的包名，避免冲突
-version = "0.1.0" # 初始版本，可随时改
+version = "0.1.7" # 版本号，更新后便于其他项目同步更新
 description = "步尘的个人公共工具库，包含AI、文档、日志等模块"
 readme = "README.md" # 可选，如果有 README 文件
 authors = [{ name = "步尘", email = "zsq1364202622@gmail.com" }]
@@ -13,7 +13,12 @@ classifiers = [
 requires-python = ">=3.11"
 
 # 主依赖：所有项目基本都会用到的第三方库
-dependencies = ["requests", "colorama", "wcwidth"]
+dependencies = [
+    "requests",
+    "colorama",
+    "wcwidth",
+    "python-dotenv>=1.2.2",
+]
 
 # 可选依赖：仅在特定功能下需要的库，按需安装
 [project.optional-dependencies]
@@ -23,7 +28,9 @@ mysql = [
 ]
 wx = ["wxPython"]
 md = ['markdown-it-py', 'python-docx', 'pillow']
+pdf = ['pillow']
 wps = ["pywin32", "PyPDF2"]
+oss = ["oss2>=2.19.1"]
 
 
 [tool.setuptools.packages.find]

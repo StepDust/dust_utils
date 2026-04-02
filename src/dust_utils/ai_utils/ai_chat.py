@@ -2,6 +2,7 @@ import requests
 import json
 import time
 import re
+import os
 import hmac
 import hashlib
 import base64
@@ -51,13 +52,19 @@ class AIChat:
         self.api_key = config.get("apiKey")
         self.model = config.get("model")
         self.mask = config.get("mask")
-        self.modelType = config.get("modelType")
+        self.modelType = config.get("modelType", ["text"])
 
         # 初始化ai角色定义
         self.messageList = [
             {
                 "role": "system",
                 "content": self.mask,
+            }
+        ]
+        self.imageMessageList = [
+            {
+                "role": "system",
+                "content": "你是绘图提示词生成器，把用户要求转成英文prompt，不解释",
             }
         ]
 
@@ -76,7 +83,7 @@ class AIChat:
         # 查询余额
         self.check_credits()
 
-    def send_message(self, message, image_url=None):
+    def send_message(self, message, image_list=[]):
         """
         发送消息到AI服务并获取响应
 
@@ -97,7 +104,10 @@ class AIChat:
             print("")
             logger.info(f"{message}", extra={"color": "#31bdec"})
             # 发送对话请求
-            self.messageList.append({"role": "user", "content": message})
+            content = [{"type": "input_text", "text": message}]
+            for url in image_list:
+                content.append({"type": "image_url", "image_url": url})
+            self.messageList.append({"role": "user", "content": content})
 
             # 记录开始时间
             start_time = time.time()
@@ -146,6 +156,131 @@ class AIChat:
         except Exception as e:
             logger.error(f"发生未知错误: {e}")
             return None
+
+    def gen_image(
+        self, message: str, output_path: str = "output.png", size: str = None
+    ):
+        try:
+            import base64
+            import requests
+
+            client = self.openai(
+                api_key=self.api_key,
+                base_url=self.base_url,
+            )
+
+            logger.info(f"[绘图] {message} ", extra={"color": "#31bdec"})
+
+            start_time = time.time()
+
+            payload = {
+                "model": self.model,
+                "messages": [{"role": "user", "content": message}],
+                "modalities": ["image"],  # 必须加上这个
+            }
+
+            # 处理 size（转为 aspect_ratio，Gemini 系列支持较好）
+            extra_body = {}
+
+            # 自动判断是否需要 16:9（优先级：参数 > prompt 中的关键词）
+            aspect_ratio = None
+            if size:
+                aspect_ratio = self._size_to_aspect_ratio(size)
+            elif any(
+                x in message for x in ["16:9", "16：9", "宽屏", "横屏", "landscape"]
+            ):
+                aspect_ratio = "16:9"
+            elif any(x in message for x in ["9:16", "竖屏", "portrait"]):
+                aspect_ratio = "9:16"
+
+            if aspect_ratio:
+                extra_body["image_config"] = {"aspect_ratio": aspect_ratio}
+
+            # 如果有 extra_body，就传进去
+            if extra_body:
+                payload["extra_body"] = extra_body
+
+            response = client.chat.completions.create(**payload)
+
+            response_time = time.time() - start_time
+            self.useTime += response_time
+
+            # 提取图片
+            msg = response.choices[0].message
+            image_saved = False
+
+            if hasattr(msg, "images") and msg.images:
+                for idx, item in enumerate(msg.images):
+                    # item 是 dict 类型
+                    if isinstance(item, dict):
+                        image_data = item.get("image_url") or item.get("imageUrl")
+                        if isinstance(image_data, dict):
+                            url = image_data.get("url")
+                        else:
+                            url = None
+                    else:
+                        # 兼容对象类型（万一以后变了）
+                        url = getattr(
+                            getattr(item, "image_url", None), "url", None
+                        ) or getattr(item, "url", None)
+
+                    if url and isinstance(url, str):
+                        if url.startswith("data:image"):
+                            # base64 格式（Gemini 最常见）
+                            try:
+                                header, b64_data = url.split(",", 1)
+                                with open(output_path, "wb") as f:
+                                    f.write(base64.b64decode(b64_data))
+                                image_saved = True
+                                logger.info(
+                                    f"第 {idx+1} 张图片已保存 (base64) → {output_path}"
+                                )
+                                break
+                            except Exception as decode_err:
+                                logger.error(f"base64 解码失败: {decode_err}")
+                        else:
+                            # 普通 URL
+                            img_data = requests.get(url, timeout=60).content
+                            with open(output_path, "wb") as f:
+                                f.write(img_data)
+                            image_saved = True
+                            logger.info(
+                                f"第 {idx+1} 张图片已保存 (url) → {output_path}"
+                            )
+                            break
+
+            if not image_saved:
+                logger.error("响应中未找到图片数据")
+                logger.error(f"完整响应: {response}")
+                return None
+
+            logger.info(f"[图片] 保存成功: {output_path}")
+            logger.info(
+                f"响应时间: {response_time:.2f}秒\t模型: {self.model}\tbaseURL: {self.base_url}",
+                extra={"color": "#ffb800"},
+            )
+            return output_path
+
+        except Exception as e:
+            logger.error(f"绘图错误: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return None
+
+    def _size_to_aspect_ratio(self, size: str) -> str | None:
+        """简单 size 转 aspect_ratio"""
+        if not size:
+            return None
+        s = size.lower().replace(" ", "").replace("*", "x")
+        mapping = {
+            "1024x1024": "1:1",
+            "1792x1024": "16:9",
+            "1024x1792": "9:16",
+            "1344x768": "16:9",
+            "768x1344": "9:16",
+        }
+        return mapping.get(s)
 
     def clear_message(self):
         """
