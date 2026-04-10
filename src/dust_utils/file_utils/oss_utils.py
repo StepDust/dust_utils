@@ -31,10 +31,6 @@ class OSSUtils:
         """
         import oss2
 
-        endpoint = endpoint.strip().replace("\n", "").replace("\r", "")
-        if not endpoint.startswith("http"):
-            endpoint = "http://" + endpoint
-
         auth = oss2.Auth(access_key_id, access_key_secret)
         self.bucket = oss2.Bucket(
             auth=auth,
@@ -247,7 +243,7 @@ class OSSUtils:
         :return: oss的url
         """
 
-        return f"https://{self.bucket_name}.{self.endpoint}{self.format_prefix(oss_prefix)}{self.format_key(oss_key)}"
+        return f"https://{self.bucket_name}.{self.endpoint}/{self.format_prefix(oss_prefix)}{self.format_key(oss_key)}"
 
     def format_prefix(self, oss_prefix: str) -> str:
         """

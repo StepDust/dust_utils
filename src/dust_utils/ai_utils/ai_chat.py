@@ -53,6 +53,7 @@ class AIChat:
         self.model = config.get("model")
         self.mask = config.get("mask")
         self.modelType = config.get("modelType", ["text"])
+        self.temperature = config.get("temperature", 0.2)
 
         # 初始化ai角色定义
         self.messageList = [
@@ -114,6 +115,7 @@ class AIChat:
             assistant_output = client.chat.completions.create(
                 model=self.model,
                 messages=self.messageList,
+                temperature=self.temperature,
                 extra_body={
                     "enable_thinking": False  # 添加此参数，在非流式调用中禁用深度思考功能
                 },

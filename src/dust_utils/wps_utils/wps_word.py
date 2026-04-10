@@ -565,9 +565,9 @@ class WPSWord(WPSBase):
         # 去除不可见字符、左右空格等
         text = WPSUtils.remove_non_printable(text).strip()
 
-        # 删除段落内容，但保留段落起始&结束符，用于保留段落样式
+        # 删除段落内容，但保留段落结束符（¶）
         if end > start:
-            doc.Range(start + 1, end - 1).Delete()
+            doc.Range(start+1, end - 1).Delete()
 
         # 在段落开头插入新文本（保留原样式、run结构）
         insert_point = doc.Range(start, start)
