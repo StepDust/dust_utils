@@ -105,9 +105,15 @@ class AIChat:
             print("")
             logger.info(f"{message}", extra={"color": "#31bdec"})
             # 发送对话请求
-            content = [{"type": "input_text", "text": message}]
+            content = []
             for url in image_list:
                 content.append({"type": "image_url", "image_url": url})
+
+            if len(image_list) > 0:
+                content.append({"type": "input_text", "text": message})
+            else:
+                content = message
+
             self.messageList.append({"role": "user", "content": content})
 
             # 记录开始时间
