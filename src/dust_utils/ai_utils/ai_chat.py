@@ -105,16 +105,7 @@ class AIChat:
             print("")
             logger.info(f"{message}", extra={"color": "#31bdec"})
             # 发送对话请求
-            content = []
-            for url in image_list:
-                content.append({"type": "image_url", "image_url": url})
-
-            if len(image_list) > 0:
-                content.append({"type": "input_text", "text": message})
-            else:
-                content = message
-
-            self.messageList.append({"role": "user", "content": content})
+            content = self._get_content(message, image_list)
 
             # 记录开始时间
             start_time = time.time()
@@ -122,9 +113,6 @@ class AIChat:
                 model=self.model,
                 messages=self.messageList,
                 temperature=self.temperature,
-                extra_body={
-                    "enable_thinking": False  # 添加此参数，在非流式调用中禁用深度思考功能
-                },
             )
 
             # 计算响应时间
@@ -275,6 +263,24 @@ class AIChat:
 
             logger.error(traceback.format_exc())
             return None
+
+    def _get_content(self, message, image_list=[]):
+        content = []
+        for url in image_list:
+            if "openrouter" in self.base_url.lower():
+                content.append({"type": "image_url", "image_url": url})
+            elif "4sapi" in self.base_url.lower():
+                content.append({"type": "image_url", "image_url": {"url": url}})
+
+        if len(image_list) > 0:
+            if "4sapi" in self.base_url.lower():
+                content.append({"type": "text", "text": message})
+            else:
+                content.append({"type": "input_text", "text": message})
+        else:
+            content = message
+
+        self.messageList.append({"role": "user", "content": content})
 
     def _size_to_aspect_ratio(self, size: str) -> str | None:
         """简单 size 转 aspect_ratio"""

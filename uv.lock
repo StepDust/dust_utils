@@ -406,11 +406,11 @@ wheels = [
 
 [[package]]
 name = "dust-utils"
-version = "0.1.6"
+version = "0.1.8"
 source = { virtual = "." }
 dependencies = [
     { name = "colorama" },
-    { name = "oss2" },
+    { name = "cryptography" },
     { name = "python-dotenv" },
     { name = "requests" },
     { name = "wcwidth" },
@@ -430,6 +430,9 @@ md = [
 mysql = [
     { name = "pymysql" },
 ]
+oss = [
+    { name = "oss2" },
+]
 pdf = [
     { name = "pillow" },
 ]
@@ -444,11 +447,12 @@ wx = [
 [package.metadata]
 requires-dist = [
     { name = "colorama" },
+    { name = "cryptography", specifier = ">=46.0.6" },
     { name = "esprima", marker = "extra == 'ai'" },
     { name = "markdown-it-py", marker = "extra == 'md'" },
     { name = "mermaid-py", marker = "extra == 'ai'" },
     { name = "openai", marker = "extra == 'ai'", specifier = ">=2.14.0" },
-    { name = "oss2", specifier = ">=2.19.1" },
+    { name = "oss2", marker = "extra == 'oss'", specifier = ">=2.19.1" },
     { name = "pillow", marker = "extra == 'md'" },
     { name = "pillow", marker = "extra == 'pdf'" },
     { name = "pymysql", marker = "extra == 'mysql'" },
@@ -460,7 +464,7 @@ requires-dist = [
     { name = "wcwidth" },
     { name = "wxpython", marker = "extra == 'wx'" },
 ]
-provides-extras = ["ai", "mysql", "wx", "md", "pdf", "wps"]
+provides-extras = ["ai", "mysql", "wx", "md", "pdf", "wps", "oss"]
 
 [[package]]
 name = "esprima"

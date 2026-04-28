@@ -2,6 +2,7 @@ import os
 import shutil
 import zipfile
 import logging
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +14,7 @@ class ZipUtils:
 
     # 解压压缩包
     @staticmethod
-    def extract_zip(zip_path, extract_path, is_delete=False):
+    def extract_zip(zip_path, extract_path="", is_delete=False):
         """
         解压zip格式的压缩文件到指定目录
 
@@ -49,6 +50,11 @@ class ZipUtils:
             except Exception as e:
                 logger.error(f"删除目录 {extract_path} 失败: {str(e)}")
                 raise
+
+        if not extract_path:
+            # 如果没有指定解压路径，默认使用zip文件所在目录
+            extract_path = str(Path(zip_path).with_suffix(""))
+
         # 确保目标路径存在
         os.makedirs(extract_path, exist_ok=True)
 
@@ -104,6 +110,8 @@ class ZipUtils:
 
         # 记录操作完成的日志
         logger.info(f"已解压文件到 {extract_path}")
+
+        return extract_path
 
     @staticmethod
     def zip_add_files(zip_path: str, files: list, is_repeat_skip: bool = True):
@@ -256,7 +264,6 @@ class ZipUtils:
                             zip_ref.write(file_path, arcname)
 
                     logger.info(f"文件夹内容已直接打包到 zip 根目录 → {zip_path}")
-
                 else:
                     raise ValueError(f"不支持的路径类型: {source_path}")
 
@@ -270,3 +277,25 @@ class ZipUtils:
             raise
 
         logger.success(f"压缩完成 → {zip_path}")
+        return zip_path
+
+    @staticmethod
+    def remove_empty_dirs(dir):
+        contents = os.listdir(dir)
+        subdirs = [d for d in contents if os.path.isdir(os.path.join(dir, d))]
+        files = [f for f in contents if os.path.isfile(os.path.join(dir, f))]
+
+        # 如果当前目录下只有文件夹没有文件
+        if len(subdirs) > 0 and len(files) == 0:
+            for subdir in subdirs:
+                subdir_path = os.path.join(dir, subdir)
+                # 先递归处理子文件夹
+                ZipUtils.remove_empty_dirs(subdir_path)
+                # 如果子文件夹还存在（说明其中有文件），则移动其中的文件
+                if os.path.exists(subdir_path):
+                    for root, _, files in os.walk(subdir_path):
+                        for file in files:
+                            src = os.path.join(root, file)
+                            dst = os.path.join(dir, file)
+                            shutil.move(src, dst)
+                    shutil.rmtree(subdir_path)

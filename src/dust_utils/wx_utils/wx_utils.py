@@ -68,6 +68,8 @@ class WxUtils:
         :param text_width: 文本框宽度
         :param label_width: 标签宽度
         :param btn_width: 按钮宽度
+        :param btn_text: 按钮文本
+        :param btn_event: 按钮点击事件处理函数
         :param gap: 元素间距
         """
 
@@ -89,11 +91,11 @@ class WxUtils:
         for row in rows:
             config_key = row.get("config_key", "").strip()
             title = row.get("title", "")
-            text_ctrl, browse_btn = self.create_text_ctrl(
+            text_ctrl, btn_ctrl = self.create_text_ctrl(
                 sizer=sizer,
                 row=row,
                 parent=parent,
-                btn_text="浏览",
+                btn_text="打开",
                 btn_event=None,
                 row_height=row_height,
                 text_width=text_width,
@@ -101,10 +103,20 @@ class WxUtils:
                 btn_width=btn_width,
                 gap=gap,
             )
-            browse_btn.Bind(
-                wx.EVT_BUTTON,
+
+            text_ctrl.Bind(
+                wx.EVT_LEFT_DCLICK,
                 lambda event, ctrl=text_ctrl, title=f"选择{title}", config_key=config_key: self.on_select_dir(
                     event=event, text_ctrl=ctrl, title=title, config_key=config_key
+                ),
+            )
+
+            text_ctrl.SetToolTip("双击选择文件夹")
+
+            btn_ctrl.Bind(
+                wx.EVT_BUTTON,
+                lambda event, ctrl=text_ctrl: self.on_open_dir(
+                    event=event, text_ctrl=ctrl
                 ),
             )
 
@@ -117,6 +129,8 @@ class WxUtils:
         text_width=None,
         label_width=None,
         btn_width=None,
+        btn_text="",
+        btn_event=None,
         gap=None,
     ):
         """
@@ -129,6 +143,8 @@ class WxUtils:
         :param text_width: 文本框宽度
         :param label_width: 标签宽度
         :param btn_width: 按钮宽度
+        :param btn_text: 按钮文本
+        :param btn_event: 按钮点击事件处理函数
         :param gap: 元素间距
         """
 
@@ -153,8 +169,8 @@ class WxUtils:
             text_ctrl, browse_btn = self.create_text_ctrl(
                 sizer=sizer,
                 row=row,
-                btn_text="浏览",
-                btn_event=None,
+                btn_text=btn_text,
+                btn_event=btn_event,
                 parent=parent,
                 row_height=row_height,
                 text_width=text_width,
@@ -162,8 +178,9 @@ class WxUtils:
                 btn_width=btn_width,
                 gap=gap,
             )
-            browse_btn.Bind(
-                wx.EVT_BUTTON,
+
+            text_ctrl.Bind(
+                wx.EVT_LEFT_DCLICK,
                 lambda event, ctrl=text_ctrl, title=f"选择{title}", config_key=config_key, suffixs=row.get(
                     "suffixs", []
                 ): self.on_select_file(
@@ -174,6 +191,7 @@ class WxUtils:
                     suffixs=suffixs,
                 ),
             )
+            text_ctrl.SetToolTip("双击选择文件")
 
     def create_text_ctrl(
         self,
@@ -640,12 +658,14 @@ class WxUtils:
 
         # 水平 BoxSizer
         btn_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        btn_list = []
 
         for idx, item in enumerate(btn_group):
             name = item.get("name", "").strip()
+            width = item.get("width", -1)
             if not name:
                 name = item["title"]
-            btn = wx.Button(btn_panel, label=item["title"], size=(-1, row_height))
+            btn = wx.Button(btn_panel, label=item["title"], size=(width, row_height))
             btn.SetCursor(self.normal_cursor)
             # 去掉边框
             btn.SetWindowStyleFlag(wx.BORDER_NONE)
@@ -657,9 +677,14 @@ class WxUtils:
             # proportion=1 表示按钮会均分剩余空间，wx.EXPAND 保证填满
             # 每个按钮四周留 gap/2
             if idx < len(btn_group) - 1:
-                btn_sizer.Add(btn, 1, wx.EXPAND | wx.RIGHT, gap // 2)
+                if width > -1:
+                    btn_sizer.Add(btn, 0, wx.EXPAND | wx.RIGHT, gap // 2)
+                else:
+                    btn_sizer.Add(btn, 1, wx.EXPAND | wx.RIGHT, gap // 2)
             else:
                 btn_sizer.Add(btn, 1, wx.EXPAND | wx.RIGHT, 0)
+
+            btn_list.append(btn)
 
         # 给按钮面板四周留 gap/2 内边距
         outer_sizer = wx.BoxSizer(wx.VERTICAL)
@@ -669,6 +694,8 @@ class WxUtils:
 
         # 添加到主 sizer 底部
         sizer.Add(btn_panel, 0, wx.EXPAND)
+
+        return btn_list
 
     # region 创建日志控件
     def create_log_ctrls(
@@ -886,9 +913,53 @@ class WxUtils:
                 self.config.Flush()  # 使用 Flush() 保存，不要调用 Save()
         dlg.Destroy()
 
+    def on_open_dir(self, event, text_ctrl):
+        """
+        打开文件夹按钮的点击事件处理函数
+        """
+        dir_path = text_ctrl.GetValue()
+        if not os.path.exists(dir_path):
+            logger.error(f"目录不存在：{dir_path}")
+            return
+
+        logger.info(f"尝试打开目录：{dir_path}")
+
+        if os.name == "nt":
+            os.startfile(dir_path)
+        else:
+            subprocess.run(["open" if os.name == "darwin" else "xdg-open", dir_path])
+
     # endregion
 
     # region 工具函数
+
+    @staticmethod
+    def get_size(max_width=None, max_height=None, min_width=400, min_height=300):
+        """
+        获取适合当前屏幕的窗口大小
+        默认：宽度70%，高度80%
+        并限制在最小/最大范围内
+        """
+
+        # 获取屏幕尺寸
+        screen_width, screen_height = wx.GetDisplaySize()
+
+        # 按比例计算
+        width = int(screen_width * 0.7)
+        height = int(screen_height * 0.8)
+
+        # 限制最大值（如果传了的话）
+        if max_width is not None:
+            width = min(width, max_width)
+
+        if max_height is not None:
+            height = min(height, max_height)
+
+        # 限制最小值
+        width = max(width, min_width)
+        height = max(height, min_height)
+
+        return wx.Size(width, height)
 
     def get_test_color(self, panel, is_test=None):
         """返回随机颜色,非测试模式返回透明色"""

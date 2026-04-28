@@ -105,7 +105,9 @@ class ApiUtils:
         )
 
     @staticmethod
-    def download_file(download_base_urls, file_url, file_path, desc="文件"):
+    def download_file(
+        download_base_urls, file_url, file_path, check_exists=True, desc="文件"
+    ):
         """
         从多个服务器的指定URL下载文件并保存到本地。
 
@@ -134,24 +136,26 @@ class ApiUtils:
 
             try:
                 # 改用 GET 方式探测，避免 HEAD 被误判为 200
-                try:
-                    result, status_code = ApiUtils.check_file_exists(
-                        full_url=encoded_url
-                    )
-                    if not result:
-                        logger.error(
-                            f"文件不存在，HTTP状态码: {status_code} → {encoded_url}"
+
+                if check_exists:
+                    try:
+                        result, status_code = ApiUtils.check_file_exists(
+                            full_url=encoded_url
                         )
+                        if not result:
+                            logger.error(
+                                f"文件不存在，HTTP状态码: {status_code} → {encoded_url}"
+                            )
+                            if not is_last_attempt:
+                                continue
+                        else:
+                            logger.success(f"文件存在于: {encoded_url}")
+                    except requests.RequestException as e:
+                        logger.error(f"探测文件失败: {encoded_url}, 错误: {e}")
                         if not is_last_attempt:
                             continue
-                    else:
-                        logger.success(f"文件存在于: {encoded_url}")
-                except requests.RequestException as e:
-                    logger.error(f"探测文件失败: {encoded_url}, 错误: {e}")
-                    if not is_last_attempt:
-                        continue
-                    else:
-                        return ""
+                        else:
+                            return ""
 
                 # 确保目录存在
                 dir_path = os.path.dirname(file_path)
@@ -262,6 +266,9 @@ class ApiUtils:
                             ".png",
                             ".gif",
                             ".mp4",
+                            ".json",
+                            ".exe",
+                            ".md",
                         ]
                     ):
                         if debug:

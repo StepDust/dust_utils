@@ -179,3 +179,33 @@ class WPSUtils:
         if not s:
             return ""
         return re.sub(r"[\x00-\x1F\x7F]", "", s)
+
+    @staticmethod
+    def is_number(value):
+        """
+        判断值是否可以安全转换为数字
+        支持：
+        int / float / 数字字符串
+        不支持：
+        百分比、日期、公式、空值
+        """
+        if value is None:
+            return False
+
+        # 排除公式
+        if isinstance(value, str) and value.startswith("="):
+            return False
+
+        # 排除百分比（如 7%）
+        if isinstance(value, str) and "%" in value:
+            return False
+
+        # 排除空字符串
+        if str(value).strip() == "":
+            return False
+
+        try:
+            float(str(value).strip())
+            return True
+        except:
+            return False

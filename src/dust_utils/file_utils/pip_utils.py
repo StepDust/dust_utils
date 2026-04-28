@@ -120,8 +120,36 @@ class PipUtils:
                     f"模块 '{module_name}' 已安装（位于: {spec.origin}），但无法获取版本信息"
                 )
 
+    @staticmethod
+    def get_running_name(has_suffix=True):
+        """
+        获取当前运行的脚本名称。
+
+        该方法会根据脚本是否在打包环境中运行，返回不同的脚本名称。
+        如果在打包环境中运行（如使用pyinstaller打包），则返回sys.executable的文件名；
+        如果在调试环境中运行，则返回当前脚本的文件名。
+
+        Returns:
+            str: 当前运行的脚本名称
+        """
+        name = ""
+        if not PipUtils.is_development_mode():
+            # 打包后的 exe
+            name = os.path.basename(sys.executable)
+        else:
+            # 开发环境
+            name = os.path.basename(
+                os.path.abspath(inspect.stack()[1].filename)
+            )  # 调用者所在目录
+
+        if has_suffix:
+            return name
+
+        name = os.path.splitext(name)[0]  # 去掉扩展名
+        return name
+
 
 if __name__ == "__main__":
     logger.info("开始检查PyInstaller模块")
-    PipUtils.check_pip_module("PyInstaller")
-    logger.info("PyInstaller模块检查完成")
+    name = PipUtils.get_running_name(False)
+    logger.info(name)

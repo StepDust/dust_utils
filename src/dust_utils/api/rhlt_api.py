@@ -215,3 +215,114 @@ class RHLTAPI:
         elif response.status_code == 504:
             logger.warning(f"上传文件 {filePath} 超时，正常现象")
             return {"code": 504, "msg": "上传超时"}
+
+    # region 使用自定义token调用，适用于外部接口
+
+    def get_case_info_by_custom(self, case_id, case_name, remark):
+        """
+        返回软著信息
+        :param case_id: 软著信息管理页面--件编号
+        :param case_name: 软著名称
+        :param remark: 属地信息
+        """
+        # 构建API请求URL
+        url = f"{self.base_url}/outService/queryCaseInfo"
+
+        # 设置默认的分页参数
+        params = {
+            "customToken": self.token_str,  # 使用实例的token进行查询
+            "caseId": case_id,  # 默认第一页
+            "caseName": case_name,  # 每页50条记录
+            "remark": remark,  # 默认非待办
+        }
+
+        # 发送GET请求并返回JSON响应
+        response = requests.get(url, params=params, headers=self.headers)
+        return response.json()
+
+    def get_oss_prefix_list(self, remote_path, remark):
+        """
+        获取远程路径下的文件前缀列表
+        :param remote_path: 远程路径
+        :param remark: 属地信息
+        :return: 文件前缀列表
+        """
+        url = f"{self.base_url}/outService/listFiles"
+        params = {
+            "customToken": self.token_str,
+            "remotePath": remote_path,
+            "remark": remark,
+        }
+        response = requests.get(url, params=params, headers=self.headers)
+        return response.json()
+
+    def post_oss_upload_file(self, remote_path, file_path, remark):
+        """
+        上传文件到OSS
+        :param remote_path: 远程路径
+        :param file_path: 本地文件路径
+        :param remark: 属地信息
+        :return: 上传响应结果
+        """
+
+        # 构建上传URL
+        url = f"{self.base_url}/outService/uploadSingleFile"
+        # 设置请求参数
+        params = {
+            "customToken": self.token_str,
+            "remotePath": remote_path,
+            "remark": remark,
+        }
+        # 验证文件是否存在
+        if not os.path.exists(file_path):
+            logger.error(f"错误：文件 {file_path} 不存在")
+            return {}
+
+        # 打开文件并发送POST请求
+        files = {"file": open(file_path, "rb")}
+        response = requests.post(url, params=params, files=files, headers=self.headers)
+        return response.json()
+
+    def post_import_data(self, case_id, file_type, file_path, remark):
+        # 构建上传URL
+        url = f"{self.base_url}/outService/importData"
+        # 设置请求参数
+        params = {
+            "customToken": self.token_str,
+            "caseId": case_id,
+            "fileType": file_type,
+            "remark": remark,
+        }
+        # 验证文件是否存在
+        if not os.path.exists(file_path):
+            logger.error(f"错误：文件 {file_path} 不存在")
+            return {}
+
+        # 打开文件并发送POST请求
+        files = {"file": open(file_path, "rb")}
+        response = requests.post(url, params=params, files=files, headers=self.headers)
+        return response.json()
+
+    def download_case_custom(self, case_id, remark, output_dir):
+        # 获取案件详情
+        url = f"{self.base_url}/outService/getFinalData"
+        params = {
+            "customToken": self.token_str,
+            "caseId": case_id,
+            "remark": remark,
+        }
+
+        response = requests.get(url, params=params, headers=self.headers)
+
+        # 解析响应获取下载路径
+        case_info = response.json()
+        finalZipPath = f"{case_info['data']['finalZipPath']}?timestamp={random.randint(0, 1000000000)}"
+
+        save_path = os.path.join(output_dir, ApiUtils.get_filename_by_url(finalZipPath))
+        save_path = ApiUtils.download_file(
+            self.download_base_urls, finalZipPath, save_path, desc="软著材料"
+        )
+
+        return save_path
+
+    # endregion

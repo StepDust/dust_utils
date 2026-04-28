@@ -487,12 +487,6 @@ class WPSExcel(WPSBase):
         # 规范二维数组每行长度一致
         data = WPSUtils.normalize_row_lengths(data)
 
-        # 一次性写入数据
-        target_range.Value = data
-        logger.debug(
-            f"已写入 {rows} 行 × {cols} 列 到 {sheet_name}!{start_cell}:{end_cell}"
-        )
-
         # 设置字体格式
         if self.family_name:
             target_range.Font.Name = self.family_name
@@ -506,24 +500,37 @@ class WPSExcel(WPSBase):
         for r_idx, row in enumerate(data):
             for c_idx, cell_value in enumerate(row):
                 cell = ws.worksheet.Cells(start_row + r_idx, start_col + c_idx)
-                # 设置数字格式
-                if number_format and (
-                    isinstance(cell_value, (int, float)) or cell_value.startswith("=")
-                ):
-                    cell.NumberFormat = number_format
-                else:
-                    # 默认文本格式
-                    cell.NumberFormat = "@"
+                # ========= 1、公式 =========
+                if isinstance(cell_value, str) and cell_value.startswith("="):
+                    if number_format:
+                        cell.NumberFormat = number_format
+                    cell.Formula = cell_value
+                    cell.Borders.Color = self.border_color
+                    continue
 
-                # 判断是否为字符串
+                # ========= 2、数字 =========
+                if WPSUtils.is_number(cell_value):
+                    if number_format:
+                        cell.NumberFormat = number_format
+                    cell.Value = cell_value
+                    continue
+
+                # ========= 3、字符串 =========
                 if isinstance(cell_value, str):
-                    # 如果是公式，添加边框，突出显示
-                    if cell_value.startswith("="):
-                        cell.Borders.Color = self.border_color
-                    # 如果是日期，作为文本显示
+                    # 日期字符串
                     is_date, date_format = WPSUtils.get_date_format(cell_value)
                     if is_date:
                         cell.NumberFormat = date_format
+                        cell.Value = cell_value
+                        continue
+
+                    # 普通文本（重点：先设置格式）
+                    cell.NumberFormat = "@"
+                    cell.Value = str(cell_value)
+                    continue
+
+                # ========= 4、其他 =========
+                cell.Value = cell_value
 
         # 自动保存
         if auto_save:
