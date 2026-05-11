@@ -1,11 +1,11 @@
 from dust_utils.file_utils.md_to_docx import MdToDocx
 from dust_utils.ai_utils import AIChat
-from dust_utils import setup_logger
+from dust_utils import setup_loguru
 import os
 import json
 from dotenv import load_dotenv
 
-logger = setup_logger()
+logger = setup_loguru()
 
 load_dotenv(r"E:\Share\配置文件\.env")
 
@@ -45,8 +45,21 @@ def test_ai_chat():
     logger.info(response)
 
 
+@logger.catch
+def test_loguru():
+    logger.debug("这是一个调试日志")
+    logger.info("这是一个信息日志")
+    logger.warning("这是一个警告日志")
+    logger.error("这是一个错误日志")
+    logger.get_log_path()
+    logger.success("这是一个成功日志")
+    logger.critical("这是一个严重错误日志")
+    logger.divider("这是一个分割线日志")
+
+
 if __name__ == "__main__":
-    picui_key = os.getenv("PICUI_KEY")
-    logger.info(picui_key)
+    # picui_key = os.getenv("PICUI_KEY")
+    # logger.info(picui_key)
     # test_md_to_word()
     # test_ai_chat()
+    test_loguru()

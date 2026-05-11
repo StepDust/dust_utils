@@ -1,6 +1,6 @@
 [project]
 name = "dust_utils" # 建议改成你的包名，避免冲突
-version = "0.1.9" # 版本号，更新后便于其他项目同步更新
+version = "0.1.13" # 版本号，更新后便于其他项目同步更新
 description = "步尘的个人公共工具库，包含AI、文档、日志等模块"
 readme = "README.md" # 可选，如果有 README 文件
 authors = [{ name = "步尘", email = "zsq1364202622@gmail.com" }]
@@ -17,7 +17,7 @@ dependencies = [
     "requests",
     "colorama",
     "wcwidth",
-    "python-dotenv>=1.2.2",
+    "loguru",
 ]
 
 # 可选依赖：仅在特定功能下需要的库，按需安装

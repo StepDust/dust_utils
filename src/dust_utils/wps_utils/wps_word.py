@@ -567,7 +567,7 @@ class WPSWord(WPSBase):
 
         # 删除段落内容，但保留段落结束符（¶）
         if end > start:
-            doc.Range(start+1, end - 1).Delete()
+            doc.Range(start, end - 1).Delete()
 
         # 在段落开头插入新文本（保留原样式、run结构）
         insert_point = doc.Range(start, start)
