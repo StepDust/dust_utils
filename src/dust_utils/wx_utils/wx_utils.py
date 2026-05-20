@@ -4,14 +4,13 @@ import os
 import threading
 import functools
 
-import logging
-from ..logger_setup import ColorFormatter
 from .mini_alert import MiniAlert
 import random
 import json
+import logging
 
 # 配置日志
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 
 class WxUtils:
@@ -106,7 +105,7 @@ class WxUtils:
 
             text_ctrl.Bind(
                 wx.EVT_LEFT_DCLICK,
-                lambda event, ctrl=text_ctrl, title=f"选择{title}", config_key=config_key: self.on_select_dir(
+                lambda event, ctrl=text_ctrl, title=f"选择{title}", config_key=config_key: self.on_select_folder(
                     event=event, text_ctrl=ctrl, title=title, config_key=config_key
                 ),
             )
@@ -115,7 +114,7 @@ class WxUtils:
 
             btn_ctrl.Bind(
                 wx.EVT_BUTTON,
-                lambda event, ctrl=text_ctrl: self.on_open_dir(
+                lambda event, ctrl=text_ctrl: self.on_open_folder(
                     event=event, text_ctrl=ctrl
                 ),
             )
@@ -855,7 +854,7 @@ class WxUtils:
             self.config.Write(config_key, choice_ctrl.GetStringSelection())
             self.config.Flush()
 
-    def on_select_dir(self, event, text_ctrl, title, config_key):
+    def on_select_folder(self, event, text_ctrl, title, config_key):
         """
         浏览文件夹事件处理函数。
 
@@ -913,7 +912,7 @@ class WxUtils:
                 self.config.Flush()  # 使用 Flush() 保存，不要调用 Save()
         dlg.Destroy()
 
-    def on_open_dir(self, event, text_ctrl):
+    def on_open_folder(self, event, text_ctrl):
         """
         打开文件夹按钮的点击事件处理函数
         """
@@ -1123,6 +1122,34 @@ class WxUtils:
 
 
 # region 日志捕获
+
+
+class ColorFormatter(logging.Formatter):
+    """支持 16 进制颜色代码的自定义 Formatter"""
+
+    COLOR_CODES = {
+        "DIVIDER": "#eeeeee",
+        "DEBUG": "#2196F3",
+        "INFO": "#999999",
+        "SUCCESS": "#4CAF50",
+        "WARNING": "#FF9800",
+        "ERROR": "#F44336",
+        "CRITICAL": "#B71C1C",
+    }
+
+    def _hex_to_ansi(self, hex_color):
+        hex_color = hex_color.lstrip("#")
+        r = int(hex_color[0:2], 16)
+        g = int(hex_color[2:4], 16)
+        b = int(hex_color[4:6], 16)
+        return f"\033[38;2;{r};{g};{b}m"
+
+    def format(self, record):
+        default_color = self.COLOR_CODES.get(record.levelname, "#FFFFFF")
+        color = getattr(record, "color", default_color)
+        ansi_color = self._hex_to_ansi(color)
+        message = super().format(record)
+        return f"{ansi_color}{message}\033[0m"
 
 
 class WxLogHandler(logging.Handler):

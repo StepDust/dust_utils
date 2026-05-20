@@ -1,8 +1,7 @@
 import wx
-import logging
 
 # 配置日志
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 
 class MiniAlert(wx.Dialog):

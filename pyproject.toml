@@ -15,7 +15,6 @@ requires-python = ">=3.11"
 # 主依赖：所有项目基本都会用到的第三方库
 dependencies = [
     "requests",
-    "colorama",
     "wcwidth",
     "loguru",
 ]

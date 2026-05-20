@@ -1,49 +1,64 @@
 import os
 import shutil
 import zipfile
-import logging
+import tarfile
+import gzip
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 
-class ZipUtils:
+class ArchiveUtils:
     """
-    文件工具类，提供文件和目录操作功能
+    档案工具类
     """
 
-    # 解压压缩包
+    # region  解压压缩包
+
     @staticmethod
-    def extract_zip(zip_path, extract_path="", is_delete=False):
+    def extract_archive(archive_path, extract_path="", is_delete=False):
         """
-        解压zip格式的压缩文件到指定目录
+        解压压缩文件到指定目录，支持 zip、gz、tar.gz(tgz) 格式
 
         Args:
-            zip_path (str): zip压缩文件的路径
-            extract_path (str): 解压目标路径
-            is_delete (bool, optional): 是否删除目标路径已存在的文件。默认为False
+            archive_path (str): 压缩文件路径
+            extract_path (str): 解压目标路径，默认为空（解压到压缩包同名目录）
+            is_delete (bool): 是否在解压前删除已存在的目标路径
 
         Raises:
-            FileNotFoundError: 当zip文件不存在时抛出此异常
-            Exception: 当删除目标目录失败时抛出相应异常
+            FileNotFoundError: 压缩文件不存在
+            ValueError: 不支持的文件格式
+            Exception: 其他解压异常
 
         Returns:
             None
-
-        功能说明:
-        1. 检查压缩文件是否存在
-        2. 根据is_delete参数决定是否删除已存在的目标目录
-        3. 创建解压目标目录
-        4. 解压文件
-        5. 如果解压后只有一个文件夹，会将该文件夹中的内容移动到目标目录
         """
-        # 第一步：验证输入文件的存在性
-        if not os.path.exists(zip_path):
-            logger.error(f"压缩文件 {zip_path} 不存在")
-            raise FileNotFoundError(f"压缩文件 {zip_path} 不存在")
+        logger.debug(f"解压文件：{archive_path}")
+        # 1. 检查文件是否存在
+        if not os.path.exists(archive_path):
+            logger.error(f"压缩文件 {archive_path} 不存在")
+            raise FileNotFoundError(f"压缩文件 {archive_path} 不存在")
 
-        # 第二步：处理目标路径
-        # 如果设置了删除标志且目标路径存在，则删除目标路径
+        # 2. 确定解压目标目录
+        if not extract_path:
+            # 对于 tar.gz/tgz 需要去掉双重后缀，gz 只去掉 .gz，zip 去掉 .zip
+            p = Path(archive_path)
+            if archive_path.endswith((".tar.gz", ".tgz")):
+                # 去掉 .tar.gz 或 .tgz
+                name = p.name
+                if name.endswith(".tar.gz"):
+                    base = name[:-7]
+                else:  # .tgz
+                    base = name[:-4]
+                extract_path = str(p.parent / base)
+            elif archive_path.endswith(".gz"):
+                # 单文件 gz 也解压到同名目录（保持行为一致）
+                extract_path = str(p.with_suffix(""))
+            else:
+                # 默认按 zip 处理
+                extract_path = str(p.with_suffix(""))
+
+        # 3. 处理删除标志
         if is_delete and os.path.exists(extract_path):
             try:
                 shutil.rmtree(extract_path)
@@ -51,67 +66,97 @@ class ZipUtils:
                 logger.error(f"删除目录 {extract_path} 失败: {str(e)}")
                 raise
 
-        if not extract_path:
-            # 如果没有指定解压路径，默认使用zip文件所在目录
-            extract_path = str(Path(zip_path).with_suffix(""))
-
-        # 确保目标路径存在
         os.makedirs(extract_path, exist_ok=True)
 
-        # 第三步：解压文件处理
-        # 使用zipfile打开文件时指定编码格式，避免中文乱码
+        # 4. 根据格式解压
+        file_lower = archive_path.lower()
+        if file_lower.endswith(".zip"):
+            ArchiveUtils._extract_zip(archive_path, extract_path)
+        elif file_lower.endswith((".tar.gz", ".tgz")):
+            ArchiveUtils._extract_tar(archive_path, extract_path)
+        elif file_lower.endswith(".gz"):
+            ArchiveUtils._extract_gz_single(archive_path, extract_path)
+        else:
+            raise ValueError(f"不支持的压缩格式: {archive_path}")
+
+        ArchiveUtils.remove_empty_folders(extract_path)
+        logger.debug(f"已解压至：{extract_path}")
+        return extract_path
+
+    @staticmethod
+    def _extract_zip(zip_path, extract_path):
+        """解压 zip 文件，处理文件名编码"""
         with zipfile.ZipFile(zip_path, "r") as zip_ref:
-            # 遍历压缩包内的所有文件
             for file in zip_ref.namelist():
-                # 处理文件名编码问题，优先尝试GBK解码
                 try:
                     filename = file.encode("cp437").decode("gbk")
                 except UnicodeEncodeError:
-                    # 解码失败时保持原文件名
                     filename = file
 
-                # 处理目标路径上的已存在文件
                 target_path = os.path.join(extract_path, filename)
+                # 冲突处理
                 if os.path.exists(target_path):
-                    # 根据文件类型选择删除方式
                     if os.path.isdir(target_path):
                         shutil.rmtree(target_path)
                     else:
                         os.remove(target_path)
 
-                # 执行解压操作
                 zip_ref.extract(file, extract_path)
-                # 如果文件名发生了变化，进行重命名
+                # 重命名解码后的文件名
                 if file != filename:
                     os.rename(
                         os.path.join(extract_path, file),
                         os.path.join(extract_path, filename),
                     )
 
-        # 第四步：优化解压结果的目录结构
-        # 递归处理单一子目录的情况
-        def flatten_single_dir(dir_path):
-            items = os.listdir(dir_path)
-            # 如果目录中只有一个子目录，则继续处理
-            if len(items) == 1 and os.path.isdir(os.path.join(dir_path, items[0])):
-                source_dir = os.path.join(dir_path, items[0])
-                # 将子目录中的所有内容移动到父目录
-                for item in os.listdir(source_dir):
-                    source_item = os.path.join(source_dir, item)
-                    dest_item = os.path.join(dir_path, item)
-                    shutil.move(source_item, dest_item)
-                # 清理空的子目录
-                os.rmdir(source_dir)
-                # 递归处理，以防还有更深层的单一子目录
-                flatten_single_dir(dir_path)
+    @staticmethod
+    def _extract_tar(tar_path, extract_path):
+        """解压 tar.gz / tgz 文件，处理编码并应对冲突"""
+        with tarfile.open(tar_path, "r:gz") as tar_ref:
+            # 先检查所有成员，处理编码和冲突
+            for member in tar_ref.getmembers():
+                # 尝试文件名编码修正
+                try:
+                    filename = member.name.encode("cp437").decode("gbk")
+                except (UnicodeEncodeError, UnicodeDecodeError):
+                    filename = member.name
 
-        # 开始处理解压目录
-        flatten_single_dir(extract_path)
+                target_path = os.path.join(extract_path, filename)
+                # 避免成员分隔符为 '..' 等路径穿越问题，简单过滤
+                if os.path.commonpath([extract_path, target_path]) != extract_path:
+                    continue
 
-        # 记录操作完成的日志
-        logger.info(f"已解压文件到 {extract_path}")
+                if os.path.exists(target_path):
+                    if member.isdir():
+                        shutil.rmtree(target_path)
+                    else:
+                        os.remove(target_path)
 
-        return extract_path
+                # 提取成员
+                tar_ref.extract(member, extract_path)
+                if member.name != filename:
+                    src = os.path.join(extract_path, member.name)
+                    if os.path.exists(src):
+                        os.rename(src, target_path)
+
+    @staticmethod
+    def _extract_gz_single(gz_path, extract_path):
+        """解压 .gz 单文件，文件名为去掉 .gz 的部分"""
+        base_name = Path(gz_path).stem  # 注意 stem 会去掉最后的 .gz
+        output_path = os.path.join(extract_path, base_name)
+
+        # 冲突处理
+        if os.path.exists(output_path):
+            if os.path.isdir(output_path):
+                shutil.rmtree(output_path)
+            else:
+                os.remove(output_path)
+
+        with gzip.open(gz_path, mode="rb") as f_in:
+            with open(output_path, "wb") as f_out:
+                shutil.copyfileobj(f_in, f_out)
+
+    # endregion
 
     @staticmethod
     def zip_add_files(zip_path: str, files: list, is_repeat_skip: bool = True):
@@ -249,8 +294,8 @@ class ZipUtils:
                         if rel_root != ".":
                             for dir_name in dirs:
                                 dir_path = os.path.join(root, dir_name)
-                                arc_dir = os.path.join(rel_root, dir_name)
-                                zip_ref.write(dir_path, arc_dir)  # 写入空目录
+                                arc_folder = os.path.join(rel_root, dir_name)
+                                zip_ref.write(dir_path, arc_folder)  # 写入空目录
 
                         # 添加文件
                         for file in files:
@@ -280,7 +325,7 @@ class ZipUtils:
         return zip_path
 
     @staticmethod
-    def remove_empty_dirs(dir):
+    def remove_empty_folders(dir):
         contents = os.listdir(dir)
         subdirs = [d for d in contents if os.path.isdir(os.path.join(dir, d))]
         files = [f for f in contents if os.path.isfile(os.path.join(dir, f))]
@@ -290,7 +335,7 @@ class ZipUtils:
             for subdir in subdirs:
                 subdir_path = os.path.join(dir, subdir)
                 # 先递归处理子文件夹
-                ZipUtils.remove_empty_dirs(subdir_path)
+                ArchiveUtils.remove_empty_folders(subdir_path)
                 # 如果子文件夹还存在（说明其中有文件），则移动其中的文件
                 if os.path.exists(subdir_path):
                     for root, _, files in os.walk(subdir_path):
@@ -299,3 +344,71 @@ class ZipUtils:
                             dst = os.path.join(dir, file)
                             shutil.move(src, dst)
                     shutil.rmtree(subdir_path)
+
+    @staticmethod
+    def _normalize_suffix_list(suffix_list):
+        """
+        标准化后缀列表
+
+        支持：
+        - .py
+        - *.py
+        - py
+        - .d.ts
+        - *.d.ts
+        - 带空格
+        """
+
+        result = set()
+
+        for item in suffix_list:
+            if not item:
+                continue
+
+            let_suffix = str(item).strip().lower()
+
+            # 去掉 *
+            if let_suffix.startswith("*"):
+                let_suffix = let_suffix[1:]
+
+            # 补 .
+            if not let_suffix.startswith("."):
+                let_suffix = "." + let_suffix
+
+            result.add(let_suffix)
+
+        return result
+
+    @staticmethod
+    def find_files(folder_path, suffix_list, is_recursive: bool = False) -> list[Path]:
+        """
+        遍历指定文件夹下的文件
+
+        :param folder_path: 文件夹路径
+        :param suffix_list: 后缀列表，例如 ['.py', '.js', '.vue', '.d.ts']
+        :param is_recursive: 是否递归子目录
+        :return: 文件路径列表
+        """
+
+        let_path = Path(folder_path)
+        let_suffix_set = ArchiveUtils._normalize_suffix_list(suffix_list)
+
+        result = []
+
+        # 选择遍历方式
+        if is_recursive:
+            iterator = let_path.rglob("*")
+        else:
+            iterator = let_path.iterdir()
+
+        for file in iterator:
+
+            if not file.is_file():
+                continue
+
+            let_name = file.name.lower()
+
+            if any(let_name.endswith(suffix) for suffix in let_suffix_set):
+                result.append(file)
+
+        return result

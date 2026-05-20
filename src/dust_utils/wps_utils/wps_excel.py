@@ -2,7 +2,6 @@ from .wps_base import WPSBase, auto_before_call
 from .wps_utils import WPSUtils
 
 import os
-import logging
 from typing import List, Any
 from typing import overload  # 用于重载方法，根据参数类型选择不同的实现
 import re
@@ -11,7 +10,7 @@ from typing import Optional
 
 import types
 
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 
 @auto_before_call(before_func="available")
@@ -908,10 +907,10 @@ class WPSExcel(WPSBase):
             else self.file_path
         )
         # 确保保存目录存在
-        save_dir = os.path.dirname(save_path)
-        if save_dir and not os.path.exists(save_dir):
-            os.makedirs(save_dir)
-            logger.debug(f"已创建保存目录：{save_dir}")
+        save_folder = os.path.dirname(save_path)
+        if save_folder and not os.path.exists(save_folder):
+            os.makedirs(save_folder)
+            logger.debug(f"已创建保存目录：{save_folder}")
 
         try:
             self.excel.SaveAs(save_path)

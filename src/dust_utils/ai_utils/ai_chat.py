@@ -7,11 +7,10 @@ import hmac
 import hashlib
 import base64
 import urllib.parse
-import logging
 from .openrouter_credits import OpenRouterCredits
 
 # 创建模块专用记录器
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 
 class AIChat:

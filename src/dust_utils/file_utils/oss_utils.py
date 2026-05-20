@@ -1,9 +1,8 @@
 import os
-import logging
 from typing import List, Optional
 
 # 配置日志
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 
 class OSSUtils:

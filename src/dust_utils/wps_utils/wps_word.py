@@ -2,14 +2,13 @@ from .wps_base import WPSBase, auto_before_call
 from .wps_utils import WPSUtils
 
 import os
-import logging
 import pywintypes
 import tempfile
 import shutil
 from typing import List, Any, Optional
 from PyPDF2 import PdfReader
 
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 # Word 常量定义
 WD_ALIGN_PARAGRAPH_CENTER = 1
@@ -689,14 +688,14 @@ class WPSWord(WPSBase):
         start_page = self.get_first_section_start()
 
         # 2. 在英文路径下用 win32com 转换 PDF
-        with tempfile.TemporaryDirectory() as tmp_dir:
+        with tempfile.TemporaryDirectory() as tmp_folder:
             try:
                 # 拷贝到英文路径，避免中文路径导致 Word/WPS 崩溃
-                temp_docx = os.path.join(tmp_dir, "input.docx")
+                temp_docx = os.path.join(tmp_folder, "input.docx")
                 shutil.copyfile(self.file_path, temp_docx)
 
                 # 转换路径
-                pdf_path = os.path.join(tmp_dir, "output.pdf")
+                pdf_path = os.path.join(tmp_folder, "output.pdf")
 
                 # 调用 Word 或 WPS 转换
                 self.convert_to_pdf(temp_docx, pdf_path)
@@ -808,10 +807,10 @@ class WPSWord(WPSBase):
             else self.file_path
         )
         # 确保保存目录存在
-        save_dir = os.path.dirname(save_path)
-        if save_dir and not os.path.exists(save_dir):
-            os.makedirs(save_dir)
-            logger.debug(f"已创建保存目录：{save_dir}")
+        save_folder = os.path.dirname(save_path)
+        if save_folder and not os.path.exists(save_folder):
+            os.makedirs(save_folder)
+            logger.debug(f"已创建保存目录：{save_folder}")
 
         try:
             self.word.SaveAs(save_path)

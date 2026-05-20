@@ -4,10 +4,9 @@ import importlib.metadata  # 新增导入
 import sys
 import os
 import inspect
-import logging
 
 # 配置日志
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 
 class PipUtils:

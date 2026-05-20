@@ -1,8 +1,7 @@
-import logging
 import re
 
 # 初始化日志
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 
 class WordUtils:

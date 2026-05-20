@@ -1,10 +1,9 @@
 import os
-import logging
 import re
 import win32com.client as win32
 import pythoncom
 
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 
 def auto_before_call(before_func, skip_names=None):

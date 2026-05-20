@@ -95,7 +95,7 @@ def get_pack_config():
 
     if is_frozen:
         # ✔ 打包环境：exe 所在目录
-        base_dir = os.path.dirname(sys.executable)
+        base_folder = os.path.dirname(sys.executable)
         format_rule = (
             "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
             "<level>{level: <8}</level> | "
@@ -106,14 +106,14 @@ def get_pack_config():
         )
     else:
         # ✔ 开发环境：项目根目录（而不是 cwd）
-        base_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+        base_folder = os.path.dirname(os.path.abspath(sys.argv[0]))
         format_rule = (
             "<green>{time:HH:mm:ss}</green> | "
             "<level>{level: <8}</level> | "
             "<level>{message}</level>"
         )
 
-    return base_dir, format_rule
+    return base_folder, format_rule
 
 
 def setup_loguru(log_folder="logs", disabled_list=[]):
@@ -151,7 +151,7 @@ def setup_loguru(log_folder="logs", disabled_list=[]):
     # 用于过滤日志记录器，排除掉不需要的库的日志输出
     filter_lambda = lambda record: not (record["name"] or "").startswith(filter_tuple)
 
-    base_dir, stdout_format = get_pack_config()
+    base_folder, stdout_format = get_pack_config()
 
     # 控制台输出
     logger.add(
@@ -164,7 +164,7 @@ def setup_loguru(log_folder="logs", disabled_list=[]):
 
     timestamp = time.strftime("%Y%m%d_%H%M%S")
     global log_file
-    log_file = os.path.join(base_dir, log_folder, f"{timestamp}.log")
+    log_file = os.path.join(base_folder, log_folder, f"{timestamp}.log")
 
     # 文件输出（自动切割）
     logger.add(

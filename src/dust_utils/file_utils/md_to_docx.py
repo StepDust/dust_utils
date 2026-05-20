@@ -1,9 +1,8 @@
 import os
 import json
 import sys
-import logging
 
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 # region 辅助类
 
@@ -122,9 +121,9 @@ class MdToDocx:
         # 获取默认样式
         if styles is None:
             styles = []
-            current_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+            current_folder = os.path.dirname(os.path.abspath(sys.argv[0]))
             with open(
-                os.path.join(current_dir, "style.json"), "r", encoding="utf-8"
+                os.path.join(current_folder, "style.json"), "r", encoding="utf-8"
             ) as f:
                 styles = json.load(f)
                 styles = styles.get("default", [])

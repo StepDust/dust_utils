@@ -1,12 +1,11 @@
 from functools import cache
-import logging
 
 import re
 import os
 from .wps_excel import WPSExcel
 from .wps_word import WPSWord
 
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 
 class BaseExport:

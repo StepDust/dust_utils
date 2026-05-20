@@ -3,10 +3,9 @@ import os  # 用于文件和目录操作
 import requests  # 用于发送HTTP请求
 from urllib.parse import urlparse  # 用于URL解析
 from urllib.parse import quote, urlunparse
-import logging  # 用于日志记录
 
 # 创建模块专用记录器
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 
 class ApiUtils:

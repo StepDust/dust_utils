@@ -2,13 +2,12 @@
 import random  # 用于生成随机数
 import requests  # 用于发送HTTP请求
 import os  # 用于文件和目录操作
-import logging  # 用于日志记录
 import re
 import json
 from .api_utils import ApiUtils
 
 # 创建模块专用记录器
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 
 class RHLTAPI:
@@ -134,12 +133,12 @@ class RHLTAPI:
         response = requests.get(url, params=params, headers=self.headers)
         return response.json()
 
-    def download_case(self, case_id, output_dir):
+    def download_case(self, case_id, output_folder):
         """
         下载软著材料并保存到指定目录。
 
         :param case_id: 案件ID，用于标识具体案件
-        :param output_dir: 下载文件的保存目录
+        :param output_folder: 下载文件的保存目录
         :return: 保存的文件路径，下载失败返回空字符串
         """
         # 获取案件详情
@@ -150,20 +149,22 @@ class RHLTAPI:
         case_info = response.json()
         finalZipPath = f"{case_info['data']['finalZipPath']}?timestamp={random.randint(0, 1000000000)}"
 
-        save_path = os.path.join(output_dir, ApiUtils.get_filename_by_url(finalZipPath))
+        save_path = os.path.join(
+            output_folder, ApiUtils.get_filename_by_url(finalZipPath)
+        )
         save_path = ApiUtils.download_file(
             self.download_base_urls, finalZipPath, save_path, desc="软著材料"
         )
 
         return save_path
 
-    def download_code(self, case_id, case_name, output_dir):
+    def download_code(self, case_id, case_name, output_folder):
         """
         下载软著源代码并保存到本地。
 
         :param case_id: 案件ID
         :param case_name: 案件名称，用于生成文件名
-        :param output_dir: 下载文件的保存目录
+        :param output_folder: 下载文件的保存目录
         :return: 保存的文件路径，下载失败返回空字符串
         """
         # 获取案件详情
@@ -180,7 +181,7 @@ class RHLTAPI:
         if re.match(regex, codePath):
             codePath = re.sub(regex, "", codePath, count=1)
 
-        save_path = os.path.join(output_dir, f"{case_name}_code.zip")
+        save_path = os.path.join(output_folder, f"{case_name}_code.zip")
         save_path = ApiUtils.download_file(
             self.download_base_urls, codePath, save_path, desc="源码"
         )
@@ -303,7 +304,7 @@ class RHLTAPI:
         response = requests.post(url, params=params, files=files, headers=self.headers)
         return response.json()
 
-    def download_case_custom(self, case_id, remark, output_dir):
+    def download_case_custom(self, case_id, remark, output_folder):
         # 获取案件详情
         url = f"{self.base_url}/outService/getFinalData"
         params = {
@@ -318,7 +319,9 @@ class RHLTAPI:
         case_info = response.json()
         finalZipPath = f"{case_info['data']['finalZipPath']}?timestamp={random.randint(0, 1000000000)}"
 
-        save_path = os.path.join(output_dir, ApiUtils.get_filename_by_url(finalZipPath))
+        save_path = os.path.join(
+            output_folder, ApiUtils.get_filename_by_url(finalZipPath)
+        )
         save_path = ApiUtils.download_file(
             self.download_base_urls, finalZipPath, save_path, desc="软著材料"
         )
