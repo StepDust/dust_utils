@@ -7,7 +7,6 @@ import functools
 from .mini_alert import MiniAlert
 import random
 import json
-import logging
 
 # 配置日志
 from loguru import logger
@@ -767,6 +766,15 @@ class WxUtils:
             | wx.TE_NO_VSCROLL,
             size=(text_width, row_height * 10),  # 日志框高度设为按钮高度的10倍
         )
+        font = wx.Font(
+            8,
+            wx.FONTFAMILY_TELETYPE,
+            wx.FONTSTYLE_NORMAL,
+            wx.FONTWEIGHT_NORMAL,
+            faceName="Consolas",
+        )
+
+        self.log_text.SetFont(font)
         # 设置背景色和边框色为#2f363c
         self.log_text.SetBackgroundColour(wx.Colour(47, 54, 60))  # #2f363c
         main_sizer.Add(self.log_text, 1, wx.EXPAND | wx.ALL, gap)
@@ -786,11 +794,11 @@ class WxUtils:
         btn_down.Bind(wx.EVT_BUTTON, self.on_down_log)
 
         # 绑定 logger
-        wx_handler = WxLogHandler(self.log_text)
-        wx_handler.setFormatter(ColorFormatter("%(asctime)s %(message)s"))
-
-        logger = logging.getLogger()
-        logger.addHandler(wx_handler)
+        self.log_count = 0
+        logger.add(
+            self._sink,
+            # enqueue=True,
+        )
 
     def on_btn_enter(self, event):
         self.btn_hovering = True
@@ -823,6 +831,77 @@ class WxUtils:
     def on_down_log(self, event):
         # 向下滚动一页
         self.log_text.ScrollPages(1)  # 向下一页
+
+        # -------------------------
+
+    # loguru sink
+    # -------------------------
+    def _sink(self, message):
+
+        record = message.record
+
+        level = record["level"].name
+
+        color_map = {
+            "TRACE": "#8c8c8c",
+            "DEBUG": "#00c2ff",
+            "INFO": "#d9d9d9",
+            "SUCCESS": "#23D18B",
+            "WARNING": "#fadb14",
+            "ERROR": "#ff4d4f",
+            "CRITICAL": "#ff0000",
+            "DIVIDER": "#ffffff",
+        }
+
+        # level颜色
+        level_color = color_map.get(level, "#ffffff")
+
+        # 时间
+        time_text = record["time"].strftime("%H:%M:%S")
+
+        # message
+        message_text = record["message"]
+
+        if not message_text.endswith("\n"):
+            message_text += "\n"
+
+        self.log_count += 1
+
+        def write(text, color):
+            start = self.log_text.GetLastPosition()
+            self.log_text.AppendText(text)
+            end = self.log_text.GetLastPosition()
+
+            attr = wx.TextAttr()
+            attr.SetTextColour(color)
+            self.log_text.SetStyle(start, end, attr)
+
+        # 行号（灰）
+        write(f"{self.log_count:4d} ", "#8A8A8A")
+
+        # 时间（绿）
+        write(time_text, "#52c41a")
+
+        # 分隔符（灰）
+        write(" │ ", "#666666")
+
+        # LEVEL（彩色 + 粗体）
+        start = self.log_text.GetLastPosition()
+        self.log_text.AppendText(f"{level:<8}")
+        end = self.log_text.GetLastPosition()
+
+        attr = wx.TextAttr()
+        attr.SetTextColour(level_color)
+        font = self.log_text.GetFont()
+        font.SetWeight(wx.FONTWEIGHT_BOLD)
+        attr.SetFont(font)
+        self.log_text.SetStyle(start, end, attr)
+
+        # 分隔符（灰）
+        write(" │ ", "#666666")
+
+        # message（彩色）
+        write(message_text, level_color)
 
     # endregion
 
@@ -1119,277 +1198,3 @@ class WxUtils:
         return getattr(dlg, "result", None)
 
     # endregion
-
-
-# region 日志捕获
-
-
-class ColorFormatter(logging.Formatter):
-    """支持 16 进制颜色代码的自定义 Formatter"""
-
-    COLOR_CODES = {
-        "DIVIDER": "#eeeeee",
-        "DEBUG": "#2196F3",
-        "INFO": "#999999",
-        "SUCCESS": "#4CAF50",
-        "WARNING": "#FF9800",
-        "ERROR": "#F44336",
-        "CRITICAL": "#B71C1C",
-    }
-
-    def _hex_to_ansi(self, hex_color):
-        hex_color = hex_color.lstrip("#")
-        r = int(hex_color[0:2], 16)
-        g = int(hex_color[2:4], 16)
-        b = int(hex_color[4:6], 16)
-        return f"\033[38;2;{r};{g};{b}m"
-
-    def format(self, record):
-        default_color = self.COLOR_CODES.get(record.levelname, "#FFFFFF")
-        color = getattr(record, "color", default_color)
-        ansi_color = self._hex_to_ansi(color)
-        message = super().format(record)
-        return f"{ansi_color}{message}\033[0m"
-
-
-class WxLogHandler(logging.Handler):
-    """把带 ANSI 颜色码的日志输出到 wx.TextCtrl"""
-
-    ANSI_TRUECOLOR_FG = re.compile(r"\x1b\[38;2;(\d+);(\d+);(\d+)m")
-    ANSI_RESET = "\x1b[0m"
-
-    def __init__(self, text_ctrl: wx.TextCtrl):
-        super().__init__()
-        self.text_ctrl = text_ctrl
-        self.default_attr = wx.TextAttr(wx.BLACK, wx.NullColour)
-        # 设置字体
-        font_list = [
-            "Maple Mono NF CN",
-            "Menlo",
-            "Consolas",
-            "Maple UI",
-            "PingFang",
-            "Microsoft YaHei",
-            "monospace",
-        ]
-        self.font = self._get_first_available_font(font_list)
-        self.text_ctrl.SetFont(self.font)
-        self.line_count = 0
-
-    def _get_first_available_font(self, font_names):
-        """按顺序返回第一个可用字体"""
-        for name in font_names:
-            font = wx.Font(wx.FontInfo().FaceName(name))
-            if font.IsOk():
-                return font
-        return wx.Font(wx.FontInfo())  # 默认字体
-
-    def emit(self, record):
-        msg = self.format(record)
-        wx.CallAfter(self._append, msg)
-        self.flush()  # ✅ 强制刷新
-
-    def flush(self):
-        pass  # 这里不用真的写，因为 wx.TextCtrl 是立即写入的
-
-    def _append_text(self, text, color_tuple):
-        if not text:
-            return
-
-        # 自动换行
-        if not text.endswith("\n"):
-            text += "\n"
-
-        # 拆分多行
-        lines = text.splitlines()
-        for line in lines:
-            self.line_count += 1
-            line_number_str = f"{self.line_count:4d} "  # 行号 + 空格
-            start = self.text_ctrl.GetLastPosition()
-            # 先插入行号
-            self.text_ctrl.AppendText(line_number_str)
-            end = self.text_ctrl.GetLastPosition()
-            self.text_ctrl.SetStyle(
-                start, end, wx.TextAttr(wx.Colour(255, 255, 255))
-            )  # 白色
-
-            # 再插入日志内容
-            start = self.text_ctrl.GetLastPosition()
-            self.text_ctrl.AppendText(line + "\n")
-            end = self.text_ctrl.GetLastPosition()
-            self.text_ctrl.SetStyle(start, end, wx.TextAttr(wx.Colour(*color_tuple)))
-
-    def _append(self, msg):
-        pos = 0
-        text_len = len(msg)
-        while pos < text_len:
-            match = self.ANSI_TRUECOLOR_FG.search(msg, pos)
-            if match:
-                start, end = match.span()
-                # 获取 RGB
-                r, g, b = map(int, match.groups())
-                fg_color = (r, g, b)
-                # 找重置位置
-                reset_pos = msg.find(self.ANSI_RESET, end)
-                if reset_pos == -1:
-                    reset_pos = text_len
-                self._append_text(msg[end:reset_pos], fg_color)
-                pos = reset_pos + len(self.ANSI_RESET)
-            else:
-                # 没有 ANSI，按级别颜色
-                self._append_text(msg[pos:], (0, 0, 0))
-                break
-
-    def _append_with_attr(self, text, attr):
-        if not text:
-            return
-        start = self.text_ctrl.GetLastPosition()
-        self.text_ctrl.AppendText(text)
-        end = self.text_ctrl.GetLastPosition()
-        self.text_ctrl.SetStyle(start, end, attr)
-        self.text_ctrl.Update()
-
-    def _apply_ansi_codes(self, attr, codes):
-        new_attr = wx.TextAttr(
-            attr.GetTextColour(), attr.GetBackgroundColour(), attr.GetFont()
-        )
-        it = iter(codes)
-
-        for code in it:
-            if not code.isdigit():
-                continue
-            c = int(code)
-
-            if c == 0:  # reset
-                new_attr = wx.TextAttr(
-                    self.default_attr.GetTextColour(),
-                    self.default_attr.GetBackgroundColour(),
-                    self.default_attr.GetFont(),
-                )
-            elif c == 1:  # bold
-                font = new_attr.GetFont() or wx.Font(
-                    10, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD
-                )
-                font.SetWeight(wx.FONTWEIGHT_BOLD)
-                new_attr.SetFont(font)
-            elif 30 <= c <= 37:
-                new_attr.SetTextColour(self._ansi_16_color(c - 30))
-            elif 40 <= c <= 47:
-                new_attr.SetBackgroundColour(self._ansi_16_color(c - 40))
-            elif c in (38, 48):  # TrueColor / 256色
-                try:
-                    mode = next(it)
-                    if mode == "2":  # TrueColor
-                        r, g, b = int(next(it)), int(next(it)), int(next(it))
-                        color = wx.Colour(r, g, b)
-                    elif mode == "5":  # 256色
-                        idx = int(next(it))
-                        color = self._ansi_256_color(idx)
-                    else:
-                        continue
-
-                    if c == 38:
-                        new_attr.SetTextColour(color)
-                    else:
-                        new_attr.SetBackgroundColour(color)
-                except StopIteration:
-                    pass
-        return new_attr
-
-    def _ansi_16_color(self, idx):
-        """简单的 16 色映射"""
-        table = [
-            wx.BLACK,
-            wx.RED,
-            wx.GREEN,
-            wx.YELLOW,
-            wx.BLUE,
-            wx.CYAN,
-            wx.LIGHT_GREY,
-            wx.WHITE,
-        ]
-        return table[idx % len(table)]
-
-    def _ansi_256_color(self, idx):
-        """简单的 256 色映射，按灰度 fallback"""
-        return wx.Colour(idx, idx, idx)
-
-    def _apply_ansi_codes(self, attr, codes):
-        """解析 ANSI 颜色码，返回新的 wx.TextAttr"""
-        new_attr = wx.TextAttr(
-            attr.GetTextColour(), attr.GetBackgroundColour(), attr.GetFont()
-        )
-        it = iter(codes)
-
-        for code in it:
-            if not code.isdigit():
-                continue
-            c = int(code)
-
-            if c == 0:  # reset
-                new_attr = wx.TextAttr(
-                    self.default_attr.GetTextColour(),
-                    self.default_attr.GetBackgroundColour(),
-                    self.default_attr.GetFont(),
-                )
-            elif c == 1:  # bold
-                font = new_attr.GetFont() or wx.Font(
-                    10, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD
-                )
-                font.SetWeight(wx.FONTWEIGHT_BOLD)
-                new_attr.SetFont(font)
-            elif 30 <= c <= 37:
-                new_attr.SetTextColour(self._ansi_16_color(c - 30))
-            elif 40 <= c <= 47:
-                new_attr.SetBackgroundColour(self._ansi_16_color(c - 40))
-            elif c in (38, 48):  # TrueColor / 256 色
-                try:
-                    mode = next(it)
-                    if mode == "2":  # TrueColor
-                        r, g, b = int(next(it)), int(next(it)), int(next(it))
-                        color = wx.Colour(r, g, b)
-                    elif mode == "5":  # 256 色
-                        idx = int(next(it))
-                        color = self._ansi_256_color(idx)
-                    else:
-                        continue
-
-                    if c == 38:
-                        new_attr.SetTextColour(color)
-                    else:
-                        new_attr.SetBackgroundColour(color)
-                except StopIteration:
-                    pass
-        return new_attr
-
-    # -------- 颜色映射辅助 --------
-
-    def _ansi_256_color(self, idx):
-        if idx < 16:
-            return self._ansi_16_color(idx % 8)
-        elif 16 <= idx <= 231:
-            idx -= 16
-            r = (idx // 36) % 6 * 51
-            g = (idx // 6) % 6 * 51
-            b = idx % 6 * 51
-            return wx.Colour(r, g, b)
-        elif 232 <= idx <= 255:
-            gray = (idx - 232) * 10 + 8
-            return wx.Colour(gray, gray, gray)
-        return wx.Colour(255, 255, 255)
-
-    def _ansi_16_color(self, idx):
-        table = [
-            wx.Colour(0, 0, 0),  # 黑
-            wx.Colour(128, 0, 0),  # 红
-            wx.Colour(0, 128, 0),  # 绿
-            wx.Colour(128, 128, 0),  # 黄
-            wx.Colour(0, 0, 128),  # 蓝
-            wx.Colour(128, 0, 128),  # 品红
-            wx.Colour(0, 128, 128),  # 青
-            wx.Colour(192, 192, 192),  # 白（灰）
-        ]
-        return table[idx % 8]
-
-
-# endregion

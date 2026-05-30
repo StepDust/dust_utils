@@ -61,7 +61,7 @@ class WPSBase:
         pythoncom.CoInitialize()
         self.office = None
         # 设置 logger 级别
-        logger.setLevel(logging.DEBUG if is_debug else logging.INFO)
+        # logger.setLevel(logging.DEBUG if is_debug else logging.INFO)
         try:
             self.office = win32.Dispatch(prog_id)
             self.office.Visible = False  # 是否展示窗口，调试时可改为 True

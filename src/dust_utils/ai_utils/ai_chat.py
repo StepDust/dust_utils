@@ -102,7 +102,7 @@ class AIChat:
             )
 
             print("")
-            logger.info(f"{message}", extra={"color": "#31bdec"})
+            logger.info(f"{message}")
             # 发送对话请求
             content = self._get_content(message, image_list)
 

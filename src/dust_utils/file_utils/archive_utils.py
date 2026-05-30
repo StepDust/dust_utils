@@ -68,16 +68,19 @@ class ArchiveUtils:
 
         os.makedirs(extract_path, exist_ok=True)
 
-        # 4. 根据格式解压
-        file_lower = archive_path.lower()
-        if file_lower.endswith(".zip"):
+        # 4. 根据文件真实内容特征解压
+        if zipfile.is_zipfile(archive_path):
             ArchiveUtils._extract_zip(archive_path, extract_path)
-        elif file_lower.endswith((".tar.gz", ".tgz")):
+        elif tarfile.is_tarfile(archive_path):
             ArchiveUtils._extract_tar(archive_path, extract_path)
-        elif file_lower.endswith(".gz"):
-            ArchiveUtils._extract_gz_single(archive_path, extract_path)
         else:
-            raise ValueError(f"不支持的压缩格式: {archive_path}")
+            # 检查是否为 gzip 压缩（单文件或未识别的tar.gz）
+            try:
+                with gzip.open(archive_path, "rb") as f:
+                    f.read(1)  # 尝试读取1字节，若不报错则说明是 gzip 格式
+                ArchiveUtils._extract_gz_single(archive_path, extract_path)
+            except Exception:
+                raise ValueError(f"不支持或已损坏的压缩格式: {archive_path}")
 
         ArchiveUtils.remove_empty_folders(extract_path)
         logger.debug(f"已解压至：{extract_path}")
@@ -93,14 +96,6 @@ class ArchiveUtils:
                 except UnicodeEncodeError:
                     filename = file
 
-                target_path = os.path.join(extract_path, filename)
-                # 冲突处理
-                if os.path.exists(target_path):
-                    if os.path.isdir(target_path):
-                        shutil.rmtree(target_path)
-                    else:
-                        os.remove(target_path)
-
                 zip_ref.extract(file, extract_path)
                 # 重命名解码后的文件名
                 if file != filename:
@@ -111,49 +106,23 @@ class ArchiveUtils:
 
     @staticmethod
     def _extract_tar(tar_path, extract_path):
-        """解压 tar.gz / tgz 文件，处理编码并应对冲突"""
-        with tarfile.open(tar_path, "r:gz") as tar_ref:
-            # 先检查所有成员，处理编码和冲突
-            for member in tar_ref.getmembers():
-                # 尝试文件名编码修正
-                try:
-                    filename = member.name.encode("cp437").decode("gbk")
-                except (UnicodeEncodeError, UnicodeDecodeError):
-                    filename = member.name
+        """
+        解压 tar / tar.gz / tgz / tar.bz2 / tar.xz
 
-                target_path = os.path.join(extract_path, filename)
-                # 避免成员分隔符为 '..' 等路径穿越问题，简单过滤
-                if os.path.commonpath([extract_path, target_path]) != extract_path:
-                    continue
+        特性：
+        - 自动识别压缩格式
+        """
 
-                if os.path.exists(target_path):
-                    if member.isdir():
-                        shutil.rmtree(target_path)
-                    else:
-                        os.remove(target_path)
-
-                # 提取成员
-                tar_ref.extract(member, extract_path)
-                if member.name != filename:
-                    src = os.path.join(extract_path, member.name)
-                    if os.path.exists(src):
-                        os.rename(src, target_path)
+        # tarfile.open 的 mode='r:*' 会自动根据文件头识别压缩格式
+        with tarfile.open(tar_path, mode="r:*") as tar:
+            tar.extractall(path=extract_path)
 
     @staticmethod
     def _extract_gz_single(gz_path, extract_path):
         """解压 .gz 单文件，文件名为去掉 .gz 的部分"""
-        base_name = Path(gz_path).stem  # 注意 stem 会去掉最后的 .gz
-        output_path = os.path.join(extract_path, base_name)
-
-        # 冲突处理
-        if os.path.exists(output_path):
-            if os.path.isdir(output_path):
-                shutil.rmtree(output_path)
-            else:
-                os.remove(output_path)
 
         with gzip.open(gz_path, mode="rb") as f_in:
-            with open(output_path, "wb") as f_out:
+            with open(extract_path, "wb") as f_out:
                 shutil.copyfileobj(f_in, f_out)
 
     # endregion
@@ -325,25 +294,20 @@ class ArchiveUtils:
         return zip_path
 
     @staticmethod
-    def remove_empty_folders(dir):
-        contents = os.listdir(dir)
-        subdirs = [d for d in contents if os.path.isdir(os.path.join(dir, d))]
-        files = [f for f in contents if os.path.isfile(os.path.join(dir, f))]
-
-        # 如果当前目录下只有文件夹没有文件
-        if len(subdirs) > 0 and len(files) == 0:
-            for subdir in subdirs:
-                subdir_path = os.path.join(dir, subdir)
-                # 先递归处理子文件夹
-                ArchiveUtils.remove_empty_folders(subdir_path)
-                # 如果子文件夹还存在（说明其中有文件），则移动其中的文件
-                if os.path.exists(subdir_path):
-                    for root, _, files in os.walk(subdir_path):
-                        for file in files:
-                            src = os.path.join(root, file)
-                            dst = os.path.join(dir, file)
-                            shutil.move(src, dst)
-                    shutil.rmtree(subdir_path)
+    def remove_empty_folders(folder_path):
+        items = os.listdir(folder_path)
+        # 如果目录中只有一个子目录，则继续处理
+        if len(items) == 1 and os.path.isdir(os.path.join(folder_path, items[0])):
+            source_dir = os.path.join(folder_path, items[0])
+            # 将子目录中的所有内容移动到父目录
+            for item in os.listdir(source_dir):
+                source_item = os.path.join(source_dir, item)
+                dest_item = os.path.join(folder_path, item)
+                shutil.move(source_item, dest_item)
+            # 清理空的子目录
+            os.rmdir(source_dir)
+            # 递归处理，以防还有更深层的单一子目录
+            ArchiveUtils.remove_empty_folders(folder_path)
 
     @staticmethod
     def _normalize_suffix_list(suffix_list):

@@ -549,20 +549,23 @@ class WPSWord(WPSBase):
         logger.info(f"段落信息: {para_info}")
         return para_info
 
-    def set_para_text(self, para, text: str):
+    def set_para_text(self, para, text: str, is_remove_empty=True):
         """
         安全替换段落或单元格文本，不破坏样式结构。
 
         参数：
         - para: 段落（或单元格中的段落）COM 对象
-        - text: 要替换的新文本len(table_obj.Columns)
+        - text: 要替换的新文本
+        - is_remove_empty: 是否移除文本的左右空格
         """
         doc = para.Range.Document
         start = para.Range.Start
         end = para.Range.End
 
         # 去除不可见字符、左右空格等
-        text = WPSUtils.remove_non_printable(text).strip()
+        text = WPSUtils.remove_non_printable(text)
+        if is_remove_empty:
+            text = text.strip()
 
         # 删除段落内容，但保留段落结束符（¶）
         if end > start:
@@ -571,6 +574,63 @@ class WPSWord(WPSBase):
         # 在段落开头插入新文本（保留原样式、run结构）
         insert_point = doc.Range(start, start)
         insert_point.InsertAfter(text)
+
+        return para
+
+    def copy_para(self, para, position="after"):
+        """
+        复制段落到指定位置，包括文本、格式和样式。
+
+        参数：
+        - para: 源段落（或单元格中的段落）COM 对象
+        - position: 插入位置，可选值：
+            - "before": 在该段落前插入
+            - "after": 在该段落后插入（默认）
+            - "end": 在文档末尾插入
+
+        返回:
+        - 新插入的段落对象
+        """
+        try:
+            doc = para.Range.Document
+            source_range = para.Range
+
+            # 获取源段落的文本
+            text = source_range.Text.rstrip("\r")  # 移除段落结束符
+
+            # 确定插入位置
+            if position == "before":
+                # 在该段落前插入
+                insert_range = source_range.Duplicate
+                insert_range.Collapse(0)  # 折叠到开头
+            elif position == "after":
+                # 在该段落后插入
+                insert_range = source_range.Duplicate
+                insert_range.Collapse(1)  # 折叠到末尾
+            elif position == "end":
+                # 在文档末尾插入
+                insert_range = doc.Range(doc.Content.End - 1, doc.Content.End - 1)
+            else:
+                raise ValueError(
+                    f"不支持的位置参数: {position}，应为 'before'、'after' 或 'end'"
+                )
+
+            # 插入段落
+            insert_range.InsertAfter("\r")
+            new_para = insert_range.Paragraphs(1)
+
+            # 将文本设置到新段落
+            self.set_para_text(new_para, text, is_remove_empty=False)
+
+            # 恢复格式到新段落
+            self.restore_format(new_para.Range, fmt)
+
+            logger.info(f"段落已复制到 {position} 位置")
+            return new_para
+
+        except Exception as e:
+            logger.error(f"复制段落失败: {e}", exc_info=True)
+            raise RuntimeError(f"复制段落失败: {e}")
 
     # endregion
 
