@@ -839,6 +839,9 @@ class WxUtils:
     def _sink(self, message):
 
         record = message.record
+        extra = record.get("extra", {})
+
+        color = extra.get("color", "")
 
         level = record["level"].name
 
@@ -855,6 +858,8 @@ class WxUtils:
 
         # level颜色
         level_color = color_map.get(level, "#ffffff")
+        if color:
+            level_color = color
 
         # 时间
         time_text = record["time"].strftime("%H:%M:%S")
@@ -864,6 +869,18 @@ class WxUtils:
 
         if not message_text.endswith("\n"):
             message_text += "\n"
+
+        # 提取颜色（支持 fg、bg、颜色名、十六进制）
+        pattern = r"<(fg|bg)\s+([^>]+)>"
+        match = re.search(pattern, message_text)
+        color_type = match.group(1) if match else None  # 'fg' 或 'bg'
+        color_value = match.group(2) if match else None  # '#ff0000' 或 'red'
+
+        # 清除所有标签，得到纯文本
+        message_text = re.sub(r"<[^>]*>", "", message_text)
+
+        if color_value:
+            level_color = color_value
 
         self.log_count += 1
 

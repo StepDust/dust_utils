@@ -2,15 +2,13 @@ import requests
 import json
 import time
 import re
-import os
-import hmac
-import hashlib
-import base64
-import urllib.parse
-from .openrouter_credits import OpenRouterCredits
+from urllib.parse import urlsplit, urlunsplit, quote
 
 # 创建模块专用记录器
 from loguru import logger
+
+# 返回一个新的 Logger 实例，默认启用 ANSI
+# logger = logger.opt(colors=True)
 
 
 class AIChat:
@@ -80,8 +78,13 @@ class AIChat:
         self.creditAlert = config.get("creditAlert", 0)
         self.sendCount = 0  # 发送次数
 
-        # 查询余额
-        self.check_credits()
+        self._init_colors()
+
+    def _init_colors(self):
+        self.input_color = "#31bdec"  # 输入消息颜色
+        self.url_color = "#075F96"  # URL链接颜色
+        self.log_color = "#ffb800"  # 输出消息颜色
+        self.statistics_color = "#ff5722"  # 统计信息颜色
 
     def send_message(self, message, image_list=[]):
         """
@@ -102,7 +105,8 @@ class AIChat:
             )
 
             print("")
-            logger.info(f"{message}")
+            logger.color_msg(f"{message}", color=self.input_color)
+
             # 发送对话请求
             content = self._get_content(message, image_list)
 
@@ -134,9 +138,9 @@ class AIChat:
 
             logger.info(response_content + "")
             # 输出黄色的token使用量和本次对话金额
-            logger.info(
+            logger.color_msg(
                 f"使用Token: {input_token + output_token}\t金额: {(input_token * self.input_price + output_token * self.output_price):.6f}元\t响应时间: {response_time:.2f}秒\tAI模型: {self.model}\tbaseURL: {self.base_url}",
-                extra={"color": "#ffb800"},
+                color=self.log_color,
             )
 
             self.sendCount += 1  # 发送次数加1
@@ -164,7 +168,7 @@ class AIChat:
                 base_url=self.base_url,
             )
 
-            logger.info(f"[绘图] {message} ", extra={"color": "#31bdec"})
+            logger.color_msg(f"[绘图] {message}", color=self.input_color)
 
             start_time = time.time()
 
@@ -250,9 +254,9 @@ class AIChat:
                 return None
 
             logger.info(f"[图片] 保存成功: {output_path}")
-            logger.info(
+            logger.color_msg(
                 f"响应时间: {response_time:.2f}秒\t模型: {self.model}\tbaseURL: {self.base_url}",
-                extra={"color": "#ffb800"},
+                color=self.log_color,
             )
             return output_path
 
@@ -266,12 +270,25 @@ class AIChat:
     def _get_content(self, message, image_list=[]):
         content = []
         for url in image_list:
+            parts = urlsplit(url)
+
+            encoded_url = urlunsplit(
+                (
+                    parts.scheme,
+                    parts.netloc,
+                    quote(parts.path, safe="/"),
+                    parts.query,
+                    parts.fragment,
+                )
+            )
+
             if "openrouter" in self.base_url.lower():
-                content.append({"type": "image_url", "image_url": url})
+                content.append({"type": "image_url", "image_url": encoded_url})
             elif "4sapi" in self.base_url.lower():
-                content.append({"type": "image_url", "image_url": {"url": url}})
+                content.append({"type": "image_url", "image_url": {"url": encoded_url}})
 
         if len(image_list) > 0:
+            logger.color_msg(f"图片: {image_list}", color=self.url_color)
             if "4sapi" in self.base_url.lower():
                 content.append({"type": "text", "text": message})
             else:
@@ -566,71 +583,5 @@ class AIChat:
         输出当前对话的使用情况统计，包括使用的Token数量、金额、响应时间、AI模型和baseURL等信息
         """
         logger.info(
-            f"\nAI模型：{self.model}\t总响应时间：{self.useTime:.2f}秒\t总Token：{self.useToken}\t总金额: {(self.price):.6f}元\t总次数: {(self.sendCount)}",
-            extra={"color": "#ff5722"},
+            f"<fg {self.statistics_color}>总Token：{self.useToken}\t总金额: {(self.price):.6f}元\t总响应时间：{self.useTime:.2f}秒\tAI模型：{self.model}\t总次数: {(self.sendCount)}</>"
         )
-
-    def check_credits(self):
-        """
-        检查当前账户余额
-        """
-        if self.creditAlert is None or self.creditAlert <= 0:
-            return
-
-        # OpenRouter平台余额查询
-        if self.base_url and "openrouter" in self.base_url:
-            # 初始化OpenRouterCredits对象
-            credits = OpenRouterCredits(self.api_key)
-            self.credits = credits.get_credits()
-            # 检查余额是否低于预警值
-            if self.credits["balance"] < self.creditAlert:
-                # 发送钉钉预警消息
-                self.send_dingtalk_message(self.credits["balance"])
-
-    def send_dingtalk_message(self, balance):
-        """发送钉钉预警消息"""
-        try:
-            # 钉钉机器人webhook地址
-            webhook = "https://oapi.dingtalk.com/robot/send?access_token=20eb73ffefa3c10564d57301297a6cbb3012f0772d051d5f368102b1fd4c3a45"
-            # 钉钉机器人密钥
-            secret = (
-                "SEC95d2a74bda471c22b330199caead52a227a8ca622d84fc968b21df2e07e2cde9"
-            )
-
-            def get_timestamp_and_sign(secret):
-                timestamp = str(round(time.time() * 1000))
-                string_to_sign = f"{timestamp}\n{secret}"
-                hmac_code = hmac.new(
-                    secret.encode("utf-8"),
-                    string_to_sign.encode("utf-8"),
-                    digestmod=hashlib.sha256,
-                ).digest()
-                sign = urllib.parse.quote_plus(base64.b64encode(hmac_code))
-                return timestamp, sign
-
-            timestamp, sign = get_timestamp_and_sign(secret)
-            webhook_url = f"{webhook}&timestamp={timestamp}&sign={sign}"
-
-            # 消息内容
-            message = {
-                "msgtype": "text",
-                "text": {
-                    "content": f"⚠️ OpenRouter API 余额预警\n⚠️ 当前余额: {balance:.2f} 美元\n⚠️ 预警余额: {self.creditAlert} 美元\n🪙 充值地址：https://openrouter.ai/settings/credits"
-                },
-            }
-
-            # 发送POST请求
-            headers = {"Content-Type": "application/json"}
-            response = requests.post(
-                webhook_url, headers=headers, data=json.dumps(message)
-            )
-
-            if response.status_code == 200:
-                logger.success("钉钉预警消息发送成功")
-            else:
-                logger.error(
-                    f"钉钉消息发送失败: {response.status_code} - {response.text}"
-                )
-
-        except Exception as e:
-            logger.error(f"发送钉钉消息时发生错误: {str(e)}")

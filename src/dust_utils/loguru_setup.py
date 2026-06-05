@@ -4,6 +4,7 @@ from typing import Any
 import json
 import time
 from loguru import logger
+import loguru
 
 from typing import Protocol, cast
 
@@ -87,6 +88,19 @@ def get_log_path():
     global log_file
     logger.opt(depth=1).debug(f"当前日志文件路径：{log_file}")
     return log_file
+
+
+def color_msg(msg, color, log_type="info"):
+    log_method = getattr(
+        logger.bind(color=color).opt(colors=True),
+        log_type.lower(),
+        None,
+    )
+
+    if not callable(log_method):
+        raise ValueError(f"不支持的日志类型: {log_type}")
+
+    log_method(f"<fg {color}>{msg}</>")
 
 
 def get_pack_config():
@@ -183,11 +197,16 @@ def setup_loguru(log_folder="logs", disabled_list=[]):
             "<level>{message}</level>"
         ),
     )
-
     logger.divider = logger_divider
     logger.object = logger_object
     logger.get_log_path = get_log_path
+    logger.color_msg = color_msg
 
+    logger.info("<fg #ff9000>loguru_setup中的红色文字</>")
+
+    # 核心语法，将自定义的logger对象赋值给 loguru.logger
+    # 这样在其他模块中直接使用 loguru.logger 就能获得增强功能，同时保持原有的 import 方式不变
+    loguru.logger = logger
     return logger
 
 
@@ -202,9 +221,10 @@ class LoggerExtension(Protocol):
     def success(self, msg, *args, **kwargs): ...
     def critical(self, msg, *args, **kwargs): ...
 
-    def divider(self, *args, **kwargs): ...
-    def object(self, *args, **kwargs): ...
+    def divider(self, msg, *args, **kwargs): ...
+    def object(self, object, msg="变量值如下：", *args, **kwargs): ...
     def get_log_path(self) -> str: ...
+    def color_msg(self, msg, color, log_type="info") -> str: ...
 
 
 # 👉 关键：不改 import 方式，但增强 IDE

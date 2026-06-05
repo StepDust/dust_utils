@@ -1,11 +1,12 @@
+from dust_utils import setup_loguru
+
+logger = setup_loguru()
+
 from dust_utils.file_utils.md_to_docx import MdToDocx
 from dust_utils.ai_utils import AIChat
-from dust_utils import setup_loguru
 import os
 import json
 from dotenv import load_dotenv
-
-logger = setup_loguru()
 
 load_dotenv(r"E:\Share\配置文件\.env")
 
@@ -24,6 +25,7 @@ def test_md_to_word():
 
 
 def test_ai_chat():
+    logger.info("<fg #ff0000>这是红色</>")
 
     ai_path = r"E:\软著做件成品\rhlt_project\01.auto_soft_make\config\ai_list.json"
     with open(ai_path, "r", encoding="utf-8") as f:
@@ -38,6 +40,7 @@ def test_ai_chat():
     ai_config["creditAlert"] = ai_config["credit_alert"]
 
     ai_chat = AIChat(ai_config)
+
     output_path = r"C:\Users\Administered\Desktop\output.png"
     question = "帮我生成一张水墨山水画，16：9的格式"
     response = ai_chat.gen_image(question, output_path=output_path, size="1792x1024")
@@ -47,6 +50,7 @@ def test_ai_chat():
 
 @logger.catch
 def test_loguru():
+    print(id(logger))
     logger.debug("这是一个调试日志")
     logger.info("这是一个信息日志")
     logger.warning("这是一个警告日志")
@@ -55,6 +59,9 @@ def test_loguru():
     logger.success("这是一个成功日志")
     logger.critical("这是一个严重错误日志")
     logger.divider("这是一个分割线日志")
+    logger.info("<fg #ff9000>main中的红色文字</>")
+    logger.info("<red>main中的红色文字</red>")
+    AIChat(None)
 
 
 if __name__ == "__main__":

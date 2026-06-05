@@ -1,6 +1,7 @@
 import os
 import json
 import sys
+from PIL import Image
 
 from loguru import logger
 
@@ -208,6 +209,7 @@ class MdToDocx:
                 paragraph.add_run(child.content)
                 self._set_paragraph_style(paragraph, paragraph_style)
 
+    @logger.catch
     def _add_image(self, src: str, paragraph=None):
         """
         向段落添加图片，并自动计算合适的显示宽度
@@ -280,7 +282,23 @@ class MdToDocx:
         if len(paragraph.runs) > 0:
             paragraph.add_run("\n")
         run = paragraph.add_run()
-        run.add_picture(tmp_path, width=available_width)
+        run.add_picture(self.clean_image(tmp_path), width=available_width)
+
+    def clean_image(self, path):
+        """
+        清理图片 EXIF 元数据，避免 Word 插入时出现尺寸异常等问题
+        """
+        img = Image.open(path)
+
+        # 关键：去掉 EXIF
+        data = list(img.getdata())
+        img2 = Image.new(img.mode, img.size)
+        img2.putdata(data)
+
+        buf = io.BytesIO()
+        img2.save(buf, format="PNG")
+        buf.seek(0)
+        return buf
 
     # endregion
 

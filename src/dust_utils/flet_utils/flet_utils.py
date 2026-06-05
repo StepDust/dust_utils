@@ -303,6 +303,9 @@ class LogConsole(ft.Container):
     def _sink(self, message):
 
         record = message.record
+        extra = record.get("extra", {})
+
+        color = extra.get("color", "")
 
         level = record["level"].name
 
@@ -319,6 +322,8 @@ class LogConsole(ft.Container):
 
         # level颜色
         level_color = color_map.get(level, "#ffffff")
+        if color:
+            level_color = color
 
         # 时间
         time_text = record["time"].strftime("%H:%M:%S")
