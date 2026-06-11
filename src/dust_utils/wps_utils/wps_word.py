@@ -44,7 +44,7 @@ class WPSWord(WPSBase):
         # 确定使用 WPS 还是 Word
         prog_id = "KWps.Application" if use_wps else "Word.Application"
         # 设置 logger 级别
-        logger.setLevel(logging.DEBUG if is_debug else logging.INFO)
+        # logger.setLevel(logging.DEBUG if is_debug else logging.INFO)
         super().__init__(file_path, prog_id, is_debug)
         try:
             self.family_name = family_name

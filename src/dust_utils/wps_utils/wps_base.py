@@ -89,7 +89,9 @@ class WPSBase:
         try:
             self.office.Quit()
         except Exception as e:
-            logger.error("关闭Office时出错: %s", str(e))
+            logger.error(
+                f"关闭Office时出错: {str(e)}",
+            )
         finally:
             self.office = None
             pythoncom.CoUninitialize()  # 释放 COM 库资源

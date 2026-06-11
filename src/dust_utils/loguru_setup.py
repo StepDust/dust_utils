@@ -202,8 +202,6 @@ def setup_loguru(log_folder="logs", disabled_list=[]):
     logger.get_log_path = get_log_path
     logger.color_msg = color_msg
 
-    logger.info("<fg #ff9000>loguru_setup中的红色文字</>")
-
     # 核心语法，将自定义的logger对象赋值给 loguru.logger
     # 这样在其他模块中直接使用 loguru.logger 就能获得增强功能，同时保持原有的 import 方式不变
     loguru.logger = logger
