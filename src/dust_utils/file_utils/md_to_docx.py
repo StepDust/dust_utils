@@ -1,7 +1,7 @@
 import os
 import json
 import sys
-from PIL import Image
+import io
 
 from loguru import logger
 
@@ -288,6 +288,8 @@ class MdToDocx:
         """
         清理图片 EXIF 元数据，避免 Word 插入时出现尺寸异常等问题
         """
+        from PIL import Image
+
         img = Image.open(path)
 
         # 关键：去掉 EXIF
