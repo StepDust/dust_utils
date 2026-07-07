@@ -31,7 +31,6 @@ class MarkdownAstParser:
         Returns:
             list: 解析后的 token 列表
         """
-        logger.info("正在解析Markdown文档结构...")
         if self.md is None:
             from markdown_it import MarkdownIt
 
@@ -74,7 +73,11 @@ class MdToDocx:
         初始化转换器
         创建 AST 解析器实例
         """
+        import random
+
         self.parser = MarkdownAstParser()
+        # {random.randint(0, 0xFFFFFFFF):08X}
+        self.numbering_content = ""
 
     def _ensure_docx(self):
         """
@@ -118,6 +121,7 @@ class MdToDocx:
 
         self._enable_doc_grid()
 
+        logger.info("正在解析Markdown文档结构...")
         tokens = self.parser.parse(md_text)
         # 获取默认样式
         if styles is None:
@@ -132,8 +136,10 @@ class MdToDocx:
 
         logger.info("正在写入Word文档...")
         self._write_tokens(tokens)
-        logger.success("Word文档写入完毕！")
         self.doc.save(output_path)
+
+        self._write_extra(output_path)
+        logger.success("Word文档写入完毕！")
 
     # region 写入内容
 
@@ -302,6 +308,93 @@ class MdToDocx:
         buf.seek(0)
         return buf
 
+    def _write_extra(self, output_path):
+
+        from zipfile import ZipFile, ZIP_DEFLATED
+        import tempfile
+        import os
+        import shutil
+
+        if not os.path.exists(output_path):
+            return
+
+        if not self.numbering_content:
+            return
+
+        logger.info("有序列表重新编号中...")
+
+        temp_path = output_path + ".tmp"
+
+        if self.numbering_content.strip():
+
+            abstractNum = """
+            
+<w:abstractNum w:abstractNumId="999">
+  <w:multiLevelType w:val="multilevel" />
+
+  <!-- 一级 -->
+  <w:lvl w:ilvl="0">
+    <w:start w:val="1" />
+    <w:numFmt w:val="decimal" />
+    <w:lvlText w:val="%1." />
+    <w:lvlJc w:val="left" />
+    <w:pPr>
+      <w:ind w:left="360" w:hanging="360" />
+    </w:pPr>
+  </w:lvl>
+
+  <!-- 二级 -->
+  <w:lvl w:ilvl="1">
+    <w:start w:val="1" />
+    <w:numFmt w:val="decimal" />
+    <w:lvlText w:val="%1.%2" />
+    <w:lvlJc w:val="left" />
+    <w:pPr>
+      <w:ind w:left="720" w:hanging="360" />
+    </w:pPr>
+  </w:lvl>
+
+  <!-- 三级 -->
+  <w:lvl w:ilvl="2">
+    <w:start w:val="1" />
+    <w:numFmt w:val="decimal" />
+    <w:lvlText w:val="%1.%2.%3" />
+    <w:lvlJc w:val="left" />
+    <w:pPr>
+      <w:ind w:left="1080" w:hanging="360" />
+    </w:pPr>
+  </w:lvl>
+
+</w:abstractNum>
+
+"""
+
+            # 目前这个写法可以在打包后，更新docx的内容
+            # with ZipFile(output_path, "a") as docx 打包后无法更新docx内容，需要重新打包
+            with ZipFile(output_path, "r") as zin:
+                with ZipFile(temp_path, "w", ZIP_DEFLATED) as zout:
+
+                    for item in zin.infolist():
+
+                        data = zin.read(item.filename)
+
+                        if item.filename == "word/numbering.xml":
+
+                            text = data.decode("utf-8")
+
+                            text = text.replace(
+                                "</w:numbering>",
+                                abstractNum
+                                + self.numbering_content
+                                + "\n</w:numbering>",
+                            )
+
+                            data = text.encode("utf-8")
+
+                        zout.writestr(item, data)
+
+        shutil.move(temp_path, output_path)
+
     # endregion
 
     # region 列表处理
@@ -359,18 +452,75 @@ class MdToDocx:
             nodes (list[ListNode]): 列表节点集合
         """
 
+        def generate_unique_random():
+            import time
+            import random
+
+            # 使用当前时间微秒 + random 组合，确保毫秒级唯一性
+            timestamp = int(time.time() * 1000000) % 100000  # 取微秒部分
+            rand_part = random.randint(0, 9999)
+            num = 10000 + (timestamp + rand_part) % 90000
+            return num
+
         def _write_nodes(nodes, level=0):
-            for node in nodes:
+            for i, node in enumerate(nodes):
+                num_id = generate_unique_random()
                 style = self._get_list_style(node.ordered, level)
 
                 paragraph = self.doc.add_paragraph(style=style)
+
+                _write_numId(paragraph, num_id, level, i, style)
+
                 self._set_paragraph_style(paragraph, f"li")
                 tokens = self.parser.parse(node.content)
                 self._write_tokens(tokens, paragraph=paragraph, paragraph_style=f"li")
 
                 # 递归写入子列表
                 if node.children:
+                    children_num_id = generate_unique_random()
                     _write_nodes(node.children, level + 1)
+
+        def _write_numId(paragraph, num_id, level, index, style):
+            """
+            写入段落的 numId，用于列表重新编号
+            """
+            if num_id is None or num_id == "":
+                return
+
+            if "number" not in style.lower():
+                return
+
+            p = paragraph._p
+            pPr = p.get_or_add_pPr()
+
+            ilvl = self.OxmlElement("w:ilvl")
+            ilvl.set(self.qn("w:val"), str(level))
+
+            numPr = self.OxmlElement("w:numPr")
+            numId = self.OxmlElement("w:numId")
+            numId.set(self.qn("w:val"), str(num_id))
+
+            numPr.append(ilvl)
+            numPr.append(numId)
+            pPr.append(numPr)
+
+            if index == 0:
+                self.numbering_content += f"""
+    <w:num w:numId="{num_id}">
+        <w:abstractNumId w:val="999"/>
+        <w:lvlOverride w:ilvl="{level}">
+            <w:startOverride w:val="1"/>
+        </w:lvlOverride>
+    </w:num>
+
+    """
+            else:
+                self.numbering_content += f"""
+    <w:num w:numId="{num_id}">
+        <w:abstractNumId w:val="999"/>
+    </w:num>
+
+    """
 
         _write_nodes(nodes)
 
@@ -385,12 +535,14 @@ class MdToDocx:
         Returns:
             str: 样式名称
         """
+
         if ordered:
             styles = [
                 "List Number",
                 "List Number 2",
                 "List Number 3",
             ]
+
         else:
             styles = [
                 "List Bullet",
@@ -398,8 +550,9 @@ class MdToDocx:
                 "List Bullet 3",
             ]
 
-        # Word 默认只内置到 3 级，超过就复用最后一级
-        return styles[min(level, len(styles) - 1)]
+        style = styles[min(level, len(styles) - 1)]
+
+        return style
 
     def _get_list_level(self, paragraph):
         """
@@ -411,6 +564,7 @@ class MdToDocx:
         Returns:
             int: 列表层级 (从0开始), 非列表返回 -1
         """
+
         p = paragraph._p
         pPr = p.pPr
 

@@ -12,16 +12,19 @@ load_dotenv(r"E:\Share\配置文件\.env")
 
 
 def test_md_to_word():
-    md_path = r"test_config\md_to_config\test.md"
-    output_path = r"C:\Users\Administered\Desktop\test.docx"
+    md_path = r"test_config\md_to_config\test copy.md"
+    output_path = r"E:\Share\dust_utils\test_config\md_to_config\test.docx"
     with open(r"test_config\md_to_config\style.json", "r", encoding="utf-8") as f:
         style = json.load(f)
+
+    if os.path.exists(output_path):
+        os.remove(output_path)
 
     with open(md_path, "r", encoding="utf-8") as f:
         md_text = f.read()
 
-    md_to_docx = MdToDocx()
-    md_to_docx.convert(md_text, output_path, style["default"])
+        md_to_docx = MdToDocx()
+        md_to_docx.convert(md_text, output_path, style["default"])
 
 
 def test_ai_chat():
@@ -67,6 +70,6 @@ def test_loguru():
 if __name__ == "__main__":
     # picui_key = os.getenv("PICUI_KEY")
     # logger.info(picui_key)
-    # test_md_to_word()
+    test_md_to_word()
     # test_ai_chat()
-    test_loguru()
+    # test_loguru()
