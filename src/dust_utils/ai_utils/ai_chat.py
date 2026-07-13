@@ -284,15 +284,15 @@ class AIChat:
 
             if "openrouter" in self.base_url.lower():
                 content.append({"type": "image_url", "image_url": encoded_url})
-            elif "4sapi" in self.base_url.lower():
+            else:
                 content.append({"type": "image_url", "image_url": {"url": encoded_url}})
 
         if len(image_list) > 0:
             logger.color_msg(f"图片: {image_list}", color=self.url_color)
-            if "4sapi" in self.base_url.lower():
-                content.append({"type": "text", "text": message})
-            else:
+            if "openrouter" in self.base_url.lower():
                 content.append({"type": "input_text", "text": message})
+            else:
+                content.append({"type": "text", "text": message})
         else:
             content = message
 
