@@ -1,5 +1,6 @@
 import os
 from typing import List, Optional
+from pathlib import Path
 
 # 配置日志
 from loguru import logger
@@ -317,6 +318,7 @@ class OSSUtils:
                 objects.append(
                     {
                         "key": obj.key,
+                        "file_name": Path(obj.key).name,
                         "size": obj.size,
                         "last_modified": obj.last_modified,
                         "type": "folder" if obj.key.endswith("/") else "file",

@@ -1,4 +1,5 @@
 import re
+from pathlib import Path
 
 # 初始化日志
 from loguru import logger
@@ -87,6 +88,7 @@ class WordUtils:
         # 复制字体
         WordUtils._copy_font_name(src_run, new_run)
 
+    @staticmethod
     def replace_vars_fuzzy(text: str, params: dict) -> str:
         """
         支持 {{ var }} / {{ va r }} / {{Var}} 等模糊变量替换
@@ -133,6 +135,7 @@ class WordUtils:
         target_rFonts = target_rPr.get_or_add_rFonts()
         target_rFonts.set(qn("w:eastAsia"), east_asia_font)
 
+    @staticmethod
     def get_highlight(run):
         """
         安全获取 run 的高亮颜色
@@ -149,3 +152,47 @@ class WordUtils:
             # 遇到 'none' 或非法值
             return None
         return None
+
+    @staticmethod
+    def merge_docx(file_list, output_path):
+        """
+        按顺序合并多个 docx 文件
+
+        :param file_list: list[str] docx文件路径
+        :param output_file: 输出文件路径
+        """
+
+        # 懒加载第三方库
+        from docx import Document
+        from docxcompose.composer import Composer
+
+        if not file_list:
+            raise ValueError("合并文件列表不能为空")
+
+        # 检测文件
+        for file in file_list:
+            path = Path(file)
+
+            if not path.exists():
+                raise FileNotFoundError(f"文件不存在: {file}")
+
+            if path.suffix.lower() != ".docx":
+                raise ValueError(f"不是docx文件: {file}")
+
+        # 创建主文档
+        master = Document(file_list[0])
+
+        composer = Composer(master)
+
+        # 依次追加
+        for file in file_list[1:]:
+            doc = Document(file)
+            composer.append(doc)
+
+        # 保存
+        output_path = Path(output_path)
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        composer.save(str(output_path))
+        return output_path

@@ -578,10 +578,15 @@ class AIChat:
 
         return code
 
-    def print_statistics(self):
+    def print_statistics(self, prefix="", suffix=""):
         """
         输出当前对话的使用情况统计，包括使用的Token数量、金额、响应时间、AI模型和baseURL等信息
         """
+        if prefix:
+            prefix = prefix + "\t"
+        if suffix:
+            suffix = "\t" + suffix
+
         logger.info(
-            f"<fg {self.statistics_color}>总Token：{self.useToken}\t总金额: {(self.price):.6f}元\t总响应时间：{self.useTime:.2f}秒\tAI模型：{self.model}\t总次数: {(self.sendCount)}</>"
+            f"<fg {self.statistics_color}>{prefix}总Token：{self.useToken}\t总金额: {(self.price):.6f}元\t总响应时间：{self.useTime:.2f}秒\tAI模型：{self.model}\t总次数: {(self.sendCount)}{suffix}</>"
         )

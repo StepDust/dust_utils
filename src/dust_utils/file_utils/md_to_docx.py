@@ -245,6 +245,7 @@ class MdToDocx:
 
         else:
             src = unquote(src)
+
             with open(src, "rb") as f:
                 img_bytes = f.read()
 
@@ -284,11 +285,33 @@ class MdToDocx:
             available_width = self.Inches(1)
 
         # ---------- 4️⃣ 插入 ----------
-        # 如果段落已有多个 run，先追加换行
         if len(paragraph.runs) > 0:
             paragraph.add_run("\n")
+
+        image_path = self.clean_image(tmp_path)
+
+        # 获取图片原始宽度
+        from PIL import Image
+
+        with Image.open(image_path) as img:
+            width_px, height_px = img.size
+
+            # 获取图片 DPI
+            dpi = img.info.get("dpi", (96, 96))[0]
+
+            # 转换为英寸
+            original_width = width_px / dpi
+
+        # 判断是否超过可用宽度，标准宽度界限为576px
+        if original_width > available_width.inches:
+            # 超出，限制为100%
+            image_width = available_width
+        else:
+            # 未超出，保持原始尺寸
+            image_width = self.Inches(original_width)
+
         run = paragraph.add_run()
-        run.add_picture(self.clean_image(tmp_path), width=available_width)
+        run.add_picture(image_path, width=image_width)
 
     def clean_image(self, path):
         """

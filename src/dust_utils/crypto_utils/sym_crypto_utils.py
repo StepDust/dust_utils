@@ -1,4 +1,3 @@
-from cryptography.fernet import Fernet
 import base64
 import hashlib
 
@@ -9,6 +8,8 @@ class SymCryptoUtils:
         key: base64格式密钥字符串
         如果不传，会自动生成一个
         """
+        from cryptography.fernet import Fernet
+
         if key:
             self.key = self._derive_key(key)
         else:

@@ -1,4 +1,6 @@
 from dust_utils import setup_loguru
+import random
+from dust_utils.file_utils import WordUtils
 
 logger = setup_loguru()
 
@@ -12,19 +14,63 @@ load_dotenv(r"E:\Share\配置文件\.env")
 
 
 def test_md_to_word():
-    md_path = r"test_config\md_to_config\test copy.md"
-    output_path = r"E:\Share\dust_utils\test_config\md_to_config\test.docx"
-    with open(r"test_config\md_to_config\style.json", "r", encoding="utf-8") as f:
-        style = json.load(f)
+    md_path = r"test_config\md_to_config\test_local.md"
+    fm_folder = r"C:\Users\Administered\Desktop\封面"
 
-    if os.path.exists(output_path):
-        os.remove(output_path)
+    fm_list = [
+        os.path.join(fm_folder, f)
+        for f in os.listdir(fm_folder)
+        if os.path.isfile(os.path.join(fm_folder, f)) and f.lower().endswith(".docx")
+    ]
+
+    with open(r"test_config\md_to_config\style.json", "r", encoding="utf-8") as f:
+        styles = json.load(f)
+
+    color_list = styles["color_list"]
 
     with open(md_path, "r", encoding="utf-8") as f:
         md_text = f.read()
 
         md_to_docx = MdToDocx()
-        md_to_docx.convert(md_text, output_path, style["default"])
+
+        for i, name in enumerate(styles):
+
+            # 跳过颜色配置
+            if name in ["color_list"]:
+                continue
+
+            color_name = random.choice(list(color_list.keys()))
+            color = color_list.get(color_name)
+
+            output_path = r"C:\Users\Administered\Desktop"
+            output_path = (
+                rf"{output_path}\【{styles[name]['name']} - {color_name}】text.docx"
+            )
+
+            if os.path.exists(output_path):
+                # os.remove(output_path)
+                continue
+
+            style = styles[name]
+            style["h1"]["font_color"] = color[0]
+            style["h2"]["font_color"] = color[1]
+            style["h3"]["font_color"] = color[2]
+            style["text"]["font_color"] = color[3]
+            style["li"]["font_color"] = color[3]
+
+            logger.info(f"输出样式：[{color_name}] {style['name']}...")
+            md_to_docx.convert(md_text, output_path, style)
+
+            # 合并文档
+            output_path = WordUtils.merge_docx(
+                [fm_list[i % len(fm_list)], output_path], output_path
+            )
+
+            # 替换文档变量
+            WordUtils.replace_vars(
+                str(output_path.resolve()),
+                {"case_name": "碳计量数据存储与安全溯源管理平台", "version": "V1.2"},
+            )
 
 
 def test_ai_chat():
