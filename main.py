@@ -73,7 +73,7 @@ def test_md_to_word():
             )
 
 
-def test_ai_chat():
+def test_txt_to_image():
     logger.info("<fg #ff0000>这是红色</>")
 
     ai_path = r"E:\软著做件成品\rhlt_project\01.auto_soft_make\config\ai_list.json"
@@ -117,5 +117,5 @@ if __name__ == "__main__":
     # picui_key = os.getenv("PICUI_KEY")
     # logger.info(picui_key)
     test_md_to_word()
-    # test_ai_chat()
+    # test_txt_to_image()
     # test_loguru()

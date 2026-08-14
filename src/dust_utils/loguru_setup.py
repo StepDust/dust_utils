@@ -167,14 +167,14 @@ def setup_loguru(log_folder="logs", disabled_list=[]):
 
     base_folder, stdout_format = get_pack_config()
 
-    # 控制台输出
-    logger.add(
-        sys.stdout,
-        colorize=True,
-        backtrace=False,
-        format=stdout_format,
-        filter=filter_lambda,
-    )
+    if sys.stdout:
+        logger.add(
+            sys.stdout,
+            colorize=True,
+            backtrace=False,
+            format=stdout_format,
+            filter=filter_lambda,
+        )
 
     timestamp = time.strftime("%Y%m%d_%H%M%S")
     global log_file

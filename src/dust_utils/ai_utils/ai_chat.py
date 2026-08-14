@@ -2,6 +2,7 @@ import requests
 import json
 import time
 import re
+from enum import Enum
 from urllib.parse import urlsplit, urlunsplit, quote
 
 # 创建模块专用记录器
@@ -11,22 +12,29 @@ from loguru import logger
 # logger = logger.opt(colors=True)
 
 
+class ChatModel(Enum):
+    """
+    枚举，表示使用的请求模式
+    """
+
+    RESPONSES = 1
+    CHAT_COMPLETIONS = 2
+
+
 class AIChat:
     """
     这是一个AI聊天工具类，主要功能包括:
     1. 与AI大模型进行对话交互，支持文本和图像输入
-    2. 支持多种AI模型配置和服务商(OpenAI、OpenRouter等)
-    3. 记录对话token使用量、费用和响应时间
-    4. 提供JSON和代码格式修复功能
-    5. 提供余额预警功能，支持钉钉通知
+    2. 支持图像输出
+    3. 支持多种AI模型配置和服务商(OpenAI格式)
+    4. 记录对话token使用量、费用和响应时间
+    5. 提供JSON和代码格式修复功能
 
     主要方法:
     - send_message(): 发送消息并获取AI响应，支持文本和图像输入
     - clear_message(): 清空对话历史
     - fix_json(): 修复不规范的JSON字符串
     - fix_code(): 移除代码块标记，支持多种编程语言
-    - check_credits(): 查询账户余额
-    - send_dingtalk_message(): 发送钉钉预警消息
     """
 
     def __init__(self, config):
@@ -51,6 +59,7 @@ class AIChat:
         self.mask = config.get("mask")
         self.modelType = config.get("modelType", ["text"])
         self.temperature = config.get("temperature", 0.2)
+        self.chat_model = ChatModel.RESPONSES  # 默认使用 Responses API
 
         # 初始化ai角色定义
         self.messageList = [
@@ -105,33 +114,29 @@ class AIChat:
             )
 
             print("")
+            # 输入消息和图片列表
             logger.color_msg(f"{message}", color=self.input_color)
-
-            # 发送对话请求
-            content = self._get_content(message, image_list)
+            if len(image_list) > 0:
+                logger.color_msg(f"图片: {image_list}", color=self.url_color)
 
             # 记录开始时间
             start_time = time.time()
-            assistant_output = client.chat.completions.create(
-                model=self.model,
-                messages=self.messageList,
-                temperature=self.temperature,
-            )
+
+            # 自动切换调用，获取实际的回复内容、使用情况
+            response_content, usage = self._call_api(client, message, image_list)
 
             # 计算响应时间
             response_time = time.time() - start_time
             self.useTime += response_time  # 累计使用时间
 
-            # 获取实际的回复内容
-            response_content = assistant_output.choices[0].message.content
-
             # 计算本次对话的token使用量和金额
-            input_token = assistant_output.usage.prompt_tokens
-            output_token = assistant_output.usage.completion_tokens
+            input_token = usage["prompt_tokens"]
+            output_token = usage["completion_tokens"]
             self.useToken += input_token + output_token  # 累计使用token
-            self.price += (
+            this_send_price = (
                 input_token * self.input_price + output_token * self.output_price
-            )  # 累计使用金额
+            )
+            self.price += this_send_price  # 累计使用金额
 
             # 将大模型的回复信息添加到对话列表中
             self.messageList.append({"role": "assistant", "content": response_content})
@@ -139,7 +144,7 @@ class AIChat:
             logger.info(response_content + "")
             # 输出黄色的token使用量和本次对话金额
             logger.color_msg(
-                f"使用Token: {input_token + output_token}\t金额: {(input_token * self.input_price + output_token * self.output_price):.6f}元\t响应时间: {response_time:.2f}秒\tAI模型: {self.model}\tbaseURL: {self.base_url}",
+                f"使用Token: {input_token + output_token}\t金额: {this_send_price:.6f}元\t响应时间: {response_time:.2f}秒\tAI模型: {self.model}\tbaseURL: {self.base_url}\t{str(self.chat_model.name)}",
                 color=self.log_color,
             )
 
@@ -155,6 +160,83 @@ class AIChat:
         except Exception as e:
             logger.error(f"发生未知错误: {e}")
             return None
+
+    def _get_content(self, message, image_list=[]):
+        content = []
+        for url in image_list:
+            parts = urlsplit(url)
+
+            encoded_url = urlunsplit(
+                (
+                    parts.scheme,
+                    parts.netloc,
+                    quote(parts.path, safe="/"),
+                    parts.query,
+                    parts.fragment,
+                )
+            )
+
+            # if "openrouter" in self.base_url.lower():
+            #     content.append({"type": "image_url", "image_url": encoded_url})
+            # else:
+
+            if self.chat_model == ChatModel.RESPONSES:
+                content.append({"type": "input_image", "image_url": encoded_url})
+            else:
+                content.append({"type": "image_url", "image_url": {"url": encoded_url}})
+
+        if len(image_list) > 0:
+            if self.chat_model == ChatModel.RESPONSES:
+                content.append({"type": "input_text", "text": message})
+            else:
+                content.append({"type": "text", "text": message})
+        else:
+            content = message
+
+        self.messageList.append({"role": "user", "content": content})
+
+    def _call_api(self, client, message, image_list):
+        """优先使用 Responses API，失败则自动降级到 Chat Completions"""
+        # 1. 尝试 Responses API
+
+        try:
+            if self.chat_model == ChatModel.RESPONSES:
+                # 配置消息内容
+                self._get_content(message, image_list)
+                resp = client.responses.create(
+                    model=self.model,
+                    input=self.messageList,
+                    temperature=self.temperature,
+                )
+                text = "".join(
+                    item.content[0].text
+                    for item in resp.output
+                    if item.type == "message" and item.content[0].type == "output_text"
+                )
+                usage = {
+                    "prompt_tokens": resp.usage.input_tokens,
+                    "completion_tokens": resp.usage.output_tokens,
+                }
+                return text, usage
+        except Exception as e:
+            logger.warning(f"Responses API 不可用 ({e})，降级到 Chat Completions")
+            self.messageList.pop()  # 移除最新的内容
+            self.chat_model = ChatModel.CHAT_COMPLETIONS  # 对话模式降级
+
+        self._get_content(message, image_list)
+        # 2. 降级到 Chat Completions
+        resp = client.chat.completions.create(
+            model=self.model,
+            messages=self.messageList,
+            temperature=self.temperature,
+        )
+
+        text = resp.choices[0].message.content
+        usage = {
+            "prompt_tokens": resp.usage.prompt_tokens,
+            "completion_tokens": resp.usage.completion_tokens,
+        }
+        return text, usage
 
     def gen_image(
         self, message: str, output_path: str = "output.png", size: str = None
@@ -266,37 +348,6 @@ class AIChat:
 
             logger.error(traceback.format_exc())
             return None
-
-    def _get_content(self, message, image_list=[]):
-        content = []
-        for url in image_list:
-            parts = urlsplit(url)
-
-            encoded_url = urlunsplit(
-                (
-                    parts.scheme,
-                    parts.netloc,
-                    quote(parts.path, safe="/"),
-                    parts.query,
-                    parts.fragment,
-                )
-            )
-
-            if "openrouter" in self.base_url.lower():
-                content.append({"type": "image_url", "image_url": encoded_url})
-            else:
-                content.append({"type": "image_url", "image_url": {"url": encoded_url}})
-
-        if len(image_list) > 0:
-            logger.color_msg(f"图片: {image_list}", color=self.url_color)
-            if "openrouter" in self.base_url.lower():
-                content.append({"type": "input_text", "text": message})
-            else:
-                content.append({"type": "text", "text": message})
-        else:
-            content = message
-
-        self.messageList.append({"role": "user", "content": content})
 
     def _size_to_aspect_ratio(self, size: str) -> str | None:
         """简单 size 转 aspect_ratio"""
