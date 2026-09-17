@@ -103,7 +103,7 @@ class MdToDocx:
         self.OxmlElement = OxmlElement
         self._docx_loaded = True
 
-    def convert(self, md_text: str, output_path: str, styles: list = None):
+    def convert(self, md_text: str, output_path: str, styles: list = []):
         """
         执行转换流程：Markdown -> Word
 

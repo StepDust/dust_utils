@@ -75,7 +75,7 @@ def logger_divider(message="", max_len=50, char="=", *args, **kwargs):
 def logger_object(object: dict | list, message="变量值如下：", *args, **kwargs):
     """记录对象日志"""
     if object is None:
-        self.log(logging.INFO, "这是一个空对象", *args, stacklevel=3, **kwargs)
+        logger.log(logging.INFO, "这是一个空对象", *args, stacklevel=3, **kwargs)
         return
     data = safe_to_dict(object, max_depth=5)
     # 跳过当前函数、再跳过包装函数，定位到调用的代码处
@@ -100,9 +100,10 @@ def color_msg(msg, color, log_type="info"):
     if not callable(log_method):
         raise ValueError(f"不支持的日志类型: {log_type}")
 
-    logger.info(msg)
-    # log_method(f"{msg}")
-    # log_method(f"<fg={color}>{msg}</>")
+    # logger.info(msg)
+    safe = str(msg).replace("<", "\\<").replace(">", "\\>")
+    logger.info(safe)
+    log_method(f"<fg {safe}>{msg}</>")
 
 
 def get_pack_config():

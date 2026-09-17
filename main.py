@@ -315,6 +315,9 @@ def test_txt_to_image():
 def test_loguru():
 
     print(id(logger))
+    logger.color_msg("111</>", color="#f00")
+
+    return
     logger.debug("这是一个调试日志")
     logger.info("这是一个信息日志")
     logger.warning("这是一个警告日志")
@@ -331,6 +334,6 @@ def test_loguru():
 if __name__ == "__main__":
     # picui_key = os.getenv("PICUI_KEY")
     # logger.info(picui_key)
-    test_md_to_word()
+    # test_md_to_word()
     # test_txt_to_image()
-    # test_loguru()
+    test_loguru()
