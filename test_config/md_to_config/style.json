@@ -65,6 +65,19 @@
             "space_before": 0,
             "space_after": 3,
             "first_line_indent": 0
+        },
+        "table": {
+            "font_name": "微软雅黑",
+            "font_size": 11,
+            "font_color": "#000000",
+            "bold": false,
+            "underline": false,
+            "italic": false,
+            "align": "left",
+            "line_spacing": 1.5,
+            "space_before": 0,
+            "space_after": 0,
+            "first_line_indent": 0
         }
     },
     "modern": {
@@ -132,6 +145,19 @@
             "line_spacing": 1.5,
             "space_before": 0,
             "space_after": 4,
+            "first_line_indent": 0
+        },
+        "table": {
+            "font_name": "微软雅黑",
+            "font_size": 11,
+            "font_color": "#374151",
+            "bold": false,
+            "underline": false,
+            "italic": false,
+            "align": "left",
+            "line_spacing": 1.6,
+            "space_before": 0,
+            "space_after": 0,
             "first_line_indent": 0
         }
     },
@@ -201,6 +227,19 @@
             "space_before": 0,
             "space_after": 3,
             "first_line_indent": 0
+        },
+        "table": {
+            "font_name": "等线",
+            "font_size": 10.5,
+            "font_color": "#333333",
+            "bold": false,
+            "underline": false,
+            "italic": false,
+            "align": "left",
+            "line_spacing": 1.45,
+            "space_before": 0,
+            "space_after": 0,
+            "first_line_indent": 0
         }
     },
     "reading": {
@@ -268,6 +307,19 @@
             "line_spacing": 1.8,
             "space_before": 0,
             "space_after": 5,
+            "first_line_indent": 0
+        },
+        "table": {
+            "font_name": "宋体",
+            "font_size": 11,
+            "font_color": "#222222",
+            "bold": false,
+            "underline": false,
+            "italic": false,
+            "align": "left",
+            "line_spacing": 1.8,
+            "space_before": 0,
+            "space_after": 0,
             "first_line_indent": 0
         }
     },
@@ -337,6 +389,19 @@
             "space_before": 0,
             "space_after": 3,
             "first_line_indent": 0
+        },
+        "table": {
+            "font_name": "宋体",
+            "font_size": 11,
+            "font_color": "#000000",
+            "bold": false,
+            "underline": false,
+            "italic": false,
+            "align": "left",
+            "line_spacing": 1.8,
+            "space_before": 0,
+            "space_after": 0,
+            "first_line_indent": 0
         }
     },
     "official": {
@@ -394,6 +459,19 @@
             "first_line_indent": 2
         },
         "li": {
+            "font_name": "仿宋",
+            "font_size": 12,
+            "font_color": "#000000",
+            "bold": false,
+            "underline": false,
+            "italic": false,
+            "align": "left",
+            "line_spacing": 1.7,
+            "space_before": 0,
+            "space_after": 0,
+            "first_line_indent": 0
+        },
+        "table": {
             "font_name": "仿宋",
             "font_size": 12,
             "font_color": "#000000",
@@ -473,6 +551,19 @@
             "space_before": 0,
             "space_after": 5,
             "first_line_indent": 0
+        },
+        "table": {
+            "font_name": "微软雅黑",
+            "font_size": 11,
+            "font_color": "#374151",
+            "bold": false,
+            "underline": false,
+            "italic": false,
+            "align": "left",
+            "line_spacing": 1.5,
+            "space_before": 0,
+            "space_after": 0,
+            "first_line_indent": 0
         }
     },
     "minimal": {
@@ -540,6 +631,19 @@
             "line_spacing": 1.6,
             "space_before": 0,
             "space_after": 5,
+            "first_line_indent": 0
+        },
+        "table": {
+            "font_name": "等线",
+            "font_size": 11,
+            "font_color": "#333333",
+            "bold": false,
+            "underline": false,
+            "italic": false,
+            "align": "left",
+            "line_spacing": 1.7,
+            "space_before": 0,
+            "space_after": 0,
             "first_line_indent": 0
         }
     },
@@ -609,6 +713,19 @@
             "space_before": 0,
             "space_after": 2,
             "first_line_indent": 0
+        },
+        "table": {
+            "font_name": "宋体",
+            "font_size": 10.5,
+            "font_color": "#000000",
+            "bold": false,
+            "underline": false,
+            "italic": false,
+            "align": "left",
+            "line_spacing": 1.45,
+            "space_before": 0,
+            "space_after": 0,
+            "first_line_indent": 0
         }
     },
     "archive": {
@@ -676,6 +793,19 @@
             "line_spacing": 1.6,
             "space_before": 0,
             "space_after": 3,
+            "first_line_indent": 0
+        },
+        "table": {
+            "font_name": "仿宋",
+            "font_size": 11,
+            "font_color": "#000000",
+            "bold": false,
+            "underline": false,
+            "italic": false,
+            "align": "left",
+            "line_spacing": 1.7,
+            "space_before": 0,
+            "space_after": 0,
             "first_line_indent": 0
         }
     },

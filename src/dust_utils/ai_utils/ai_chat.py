@@ -1,9 +1,12 @@
 import requests
 import json
 import time
+from pathlib import Path
 import re
+import os
 from enum import Enum
 from urllib.parse import urlsplit, urlunsplit, quote
+import hashlib
 
 # 创建模块专用记录器
 from loguru import logger
@@ -31,7 +34,7 @@ class AIChat:
     5. 提供JSON和代码格式修复功能
 
     主要方法:
-    - send_message(): 发送消息并获取AI响应，支持文本和图像输入
+    - send_prompt(): 发送提问词并获取AI响应，支持文本和图像输入
     - clear_message(): 清空对话历史
     - fix_json(): 修复不规范的JSON字符串
     - fix_code(): 移除代码块标记，支持多种编程语言
@@ -53,19 +56,18 @@ class AIChat:
                 "检测到未安装 openai。请执行 'pip install openai' 以使用此功能。"
             )
 
-        self.base_url = config.get("baseUrl")
-        self.api_key = config.get("apiKey")
-        self.model = config.get("model")
-        self.mask = config.get("mask")
-        self.modelType = config.get("modelType", ["text"])
-        self.temperature = config.get("temperature", 0.2)
+        self.base_url = AIChat._get_val(config, "baseUrl")
+        self.api_key = AIChat._get_val(config, "apiKey")
+        self.model = AIChat._get_val(config, "model")
+        self.system_prompt = AIChat._get_val(config, "systemPrompt")
+        self.temperature = float(AIChat._get_val(config, "temperature", "0.2"))
         self.chat_model = ChatModel.RESPONSES  # 默认使用 Responses API
 
         # 初始化ai角色定义
         self.messageList = [
             {
                 "role": "system",
-                "content": self.mask,
+                "content": self.system_prompt,
             }
         ]
         self.imageMessageList = [
@@ -75,17 +77,29 @@ class AIChat:
             }
         ]
 
-        # 金额定价
-        self.input_price = config.get("inputPrice", 0) / 1000  # 输入金额定价
-        self.output_price = config.get("outputPrice", 0) / 1000  # 输出金额定价
+        # 文件上传的缓存
+        self.file_cache = {}
+
+        # 输入金额定价
+        self.input_price = AIChat._get_val(config, "inputPrice") / 1000  # 输入金额定价
+        self.input_price = 0 if self.input_price == "" else self.input_price / 1000
+
+        # 输出金额定价
+        self.output_price = AIChat._get_val(config, "outputPrice") / 1000
+        self.output_price = 0 if self.output_price == "" else self.output_price / 1000
+
         self.price = 0  # 已使用总金额
         self.useToken = 0  # 已使用总token
         self.useTime = 0  # 已使用总时间
 
         # 其他信息
-        self.credits = None
-        self.creditAlert = config.get("creditAlert", 0)
         self.sendCount = 0  # 发送次数
+
+        # 实例化ai连接
+        self.client = self.openai(
+            api_key=self.api_key,
+            base_url=self.base_url,
+        )
 
         self._init_colors()
 
@@ -95,7 +109,7 @@ class AIChat:
         self.log_color = "#ffb800"  # 输出消息颜色
         self.statistics_color = "#ff5722"  # 统计信息颜色
 
-    def send_message(self, message, image_list=[]):
+    def send_prompt(self, prompt, image_list=[], file_list=[]):
         """
         发送消息到AI服务并获取响应
 
@@ -107,23 +121,22 @@ class AIChat:
         """
         try:
 
-            client = self.openai(
-                # 若没有配置环境变量,请用阿里云百炼API Key将下行替换为:api_key="sk-xxx",
-                api_key=self.api_key,
-                base_url=self.base_url,
-            )
-
             print("")
+            # 上传文件，更换为映射的文件id
+            file_list = self._upload_file_list(file_list)
+
             # 输入消息和图片列表
-            logger.color_msg(f"{message}", color=self.input_color)
+            logger.color_msg(f"{prompt}", color=self.input_color)
             if len(image_list) > 0:
                 logger.color_msg(f"图片: {image_list}", color=self.url_color)
+            if len(file_list) > 0:
+                logger.color_msg(f"文件: {file_list}", color=self.url_color)
 
             # 记录开始时间
             start_time = time.time()
 
             # 自动切换调用，获取实际的回复内容、使用情况
-            response_content, usage = self._call_api(client, message, image_list)
+            response_content, usage = self._call_api(prompt, image_list, file_list)
 
             # 计算响应时间
             response_time = time.time() - start_time
@@ -161,8 +174,94 @@ class AIChat:
             logger.error(f"发生未知错误: {e}")
             return None
 
-    def _get_content(self, message, image_list=[]):
+    def _upload_file_list(self, file_list=[]):
+        """
+        文件上传
+        """
+
+        result = []
+        list_type = self._check_list_type(file_list)
+
+        if list_type == "url":
+            logger.info(f"文件均为网址，跳过上传！")
+            return file_list
+        if list_type == "mixed":
+            logger.warning(f"文件为网址、本地混合，清空文件！")
+            return result
+        if list_type == "empty":
+            # logger.info(f"文件列表为空！")
+            return result
+
+        logger.info(f"文件均为本地，开始上传...")
+        # 这里兼容阿里云的参数
+        purpose = "user_data"
+        if "aliyuncs" in self.base_url:
+            purpose = "file-extract"
+
+        for file_path in file_list:  # 文件完整路径
+            md5 = hashlib.md5()
+
+            with open(file_path, "rb") as f:
+                for chunk in iter(lambda: f.read(8192), b""):
+                    md5.update(chunk)
+
+            md5_key = md5.hexdigest()
+
+            if md5_key in self.file_cache:
+                result.append(self.file_cache.get(md5_key))
+                continue
+
+            uploaded = self.client.files.create(
+                file=Path(file_path),
+                purpose=purpose,
+            )
+            self.file_cache[md5_key] = uploaded.id
+            result.append(uploaded.id)
+
+        return result
+
+    def _check_list_type(self, file_list):
+        """
+        检测一维数组内容类型:
+        返回:
+            url     全部是网址
+            path    全部是路径
+            mixed   混合类型
+            empty   空数组
+        """
+
+        if not file_list:
+            return "empty"
+
+        url_pattern = re.compile(r"^(https?://|www\.)[^\s]+$", re.I)
+
+        def is_url(value):
+            return bool(url_pattern.match(value))
+
+        def is_path(value):
+            return os.path.isabs(value) or ("/" in value or "\\" in value)
+
+        types = set()
+
+        for item in file_list:
+            if not isinstance(item, str):
+                types.add("unknown")
+            elif is_url(item):
+                types.add("url")
+            elif is_path(item):
+                types.add("path")
+            else:
+                types.add("unknown")
+
+        if len(types) == 1:
+            return types.pop()
+
+        return "mixed"
+
+    def _get_content(self, prompt, image_list=[], file_list=[]):
         content = []
+
+        # 输入图片
         for url in image_list:
             parts = urlsplit(url)
 
@@ -176,34 +275,61 @@ class AIChat:
                 )
             )
 
-            # if "openrouter" in self.base_url.lower():
-            #     content.append({"type": "image_url", "image_url": encoded_url})
-            # else:
-
             if self.chat_model == ChatModel.RESPONSES:
                 content.append({"type": "input_image", "image_url": encoded_url})
             else:
                 content.append({"type": "image_url", "image_url": {"url": encoded_url}})
 
-        if len(image_list) > 0:
+        # 输入文件
+        list_type = self._check_list_type(file_list)
+
+        for url in file_list:
+            parts = urlsplit(url)
+
+            encoded_url = urlunsplit(
+                (
+                    parts.scheme,
+                    parts.netloc,
+                    quote(parts.path, safe="/"),
+                    parts.query,
+                    parts.fragment,
+                )
+            )
+
+            if list_type == "path":  # 全部是本地路径时
+                if self.chat_model == ChatModel.RESPONSES:
+                    content.append({"type": "input_file", "file_id": encoded_url})
+                else:
+                    content.append(
+                        {"type": "file_url", "file_url": {"url": encoded_url}}
+                    )
+            elif list_type == "url":  # 全部是网络路径时
+                if self.chat_model == ChatModel.RESPONSES:
+                    content.append({"type": "input_image", "image_url": encoded_url})
+                else:
+                    content.append(
+                        {"type": "image_url", "image_url": {"url": encoded_url}}
+                    )
+
+        if len(image_list) > 0 or len(file_list) > 0:
             if self.chat_model == ChatModel.RESPONSES:
-                content.append({"type": "input_text", "text": message})
+                content.append({"type": "input_text", "text": prompt})
             else:
-                content.append({"type": "text", "text": message})
+                content.append({"type": "text", "text": prompt})
         else:
-            content = message
+            content = prompt
 
         self.messageList.append({"role": "user", "content": content})
 
-    def _call_api(self, client, message, image_list):
+    def _call_api(self, prompt, image_list, file_list):
         """优先使用 Responses API，失败则自动降级到 Chat Completions"""
         # 1. 尝试 Responses API
 
         try:
             if self.chat_model == ChatModel.RESPONSES:
                 # 配置消息内容
-                self._get_content(message, image_list)
-                resp = client.responses.create(
+                self._get_content(prompt, image_list, file_list)
+                resp = self.client.responses.create(
                     model=self.model,
                     input=self.messageList,
                     temperature=self.temperature,
@@ -223,9 +349,9 @@ class AIChat:
             self.messageList.pop()  # 移除最新的内容
             self.chat_model = ChatModel.CHAT_COMPLETIONS  # 对话模式降级
 
-        self._get_content(message, image_list)
+        self._get_content(prompt, image_list, file_list)
         # 2. 降级到 Chat Completions
-        resp = client.chat.completions.create(
+        resp = self.client.chat.completions.create(
             model=self.model,
             messages=self.messageList,
             temperature=self.temperature,
@@ -238,25 +364,23 @@ class AIChat:
         }
         return text, usage
 
-    def gen_image(
-        self, message: str, output_path: str = "output.png", size: str = None
-    ):
+    def gen_image(self, prompt: str, output_path: str = "output.png", size: str = None):
         try:
             import base64
             import requests
 
-            client = self.openai(
+            self.client = self.openai(
                 api_key=self.api_key,
                 base_url=self.base_url,
             )
 
-            logger.color_msg(f"[绘图] {message}", color=self.input_color)
+            logger.color_msg(f"[绘图] {prompt}", color=self.input_color)
 
             start_time = time.time()
 
             payload = {
                 "model": self.model,
-                "messages": [{"role": "user", "content": message}],
+                "messages": [{"role": "user", "content": prompt}],
                 "modalities": ["image"],  # 必须加上这个
             }
 
@@ -268,10 +392,10 @@ class AIChat:
             if size:
                 aspect_ratio = self._size_to_aspect_ratio(size)
             elif any(
-                x in message for x in ["16:9", "16：9", "宽屏", "横屏", "landscape"]
+                x in prompt for x in ["16:9", "16：9", "宽屏", "横屏", "landscape"]
             ):
                 aspect_ratio = "16:9"
-            elif any(x in message for x in ["9:16", "竖屏", "portrait"]):
+            elif any(x in prompt for x in ["9:16", "竖屏", "portrait"]):
                 aspect_ratio = "9:16"
 
             if aspect_ratio:
@@ -281,7 +405,7 @@ class AIChat:
             if extra_body:
                 payload["extra_body"] = extra_body
 
-            response = client.chat.completions.create(**payload)
+            response = self.client.chat.completions.create(**payload)
 
             response_time = time.time() - start_time
             self.useTime += response_time
@@ -370,9 +494,35 @@ class AIChat:
         self.messageList = [
             {
                 "role": "system",
-                "content": self.mask,
+                "content": self.system_prompt,
             }
         ]
+
+    def delete_file_cache(self, file_list: str | list = None):
+        """
+        删除上传至服务器的文件
+        """
+        if file_list is None:
+            file_list = list(self.file_cache.values())
+
+        elif isinstance(file_list, str):
+            file_list = [file_list]
+
+        file_count = len(file_list)
+        if file_count == 0:
+            return
+
+        logger.info("开始删除文件...")
+
+        for file_id in file_list:
+            try:
+                self.client.files.delete(file_id)
+            except Exception as e:
+                print(f"删除文件失败 {file_id}: {e}")
+
+        logger.info(f"已删除文件：{file_count}")
+
+        self.file_cache.clear()
 
     def fix_json(self, json_str, out_obj=True):
         """
@@ -419,7 +569,7 @@ class AIChat:
             except json.JSONDecodeError:
                 try_count += 1
                 jsonErrorQuestion = f"```{json_str}```这是一个json格式错误的文本，请帮我修正，请注意属性应被双引号包裹，我只要修正后的json，不要输出其他内容，也不要增删属性，保持json数据结构不变，属性值中可能存在双引号，注意转义"
-                json_str = self.send_message(jsonErrorQuestion)
+                json_str = self.send_prompt(jsonErrorQuestion)
 
         # 超过最大重试次数后抛出异常
         if try_count >= max_try_count:
@@ -486,7 +636,7 @@ class AIChat:
                 f"这是一个 JavaScript 代码，其中可能存在语法错误，请帮我修正。"
                 f"我只要修正后的代码，不要输出其他内容，也不要改变代码逻辑或者修改变量、属性名称以及对应值。"
             )
-            javascript_code = self.send_message(js_error_question)
+            javascript_code = self.send_prompt(js_error_question)
 
         # 超过最大重试次数
         error_msg = f"JavaScript 代码修复失败，已重试 {max_try_count} 次"
@@ -641,3 +791,86 @@ class AIChat:
         logger.info(
             f"<fg {self.statistics_color}>{prefix}总Token：{self.useToken}\t总金额: {(self.price):.6f}元\t总响应时间：{self.useTime:.2f}秒\tAI模型：{self.model}\t总次数: {(self.sendCount)}{suffix}</>"
         )
+
+    def print_info(self):
+        logger.info(
+            f"当前模型信息如下：\n【请求地址】{self.base_url}\n【模型名称】{self.model}\n【密钥信息】{self.mask_secret(self.api_key)}\n【请求模式】{str(self.chat_model.name)}\n【模型温度】{self.temperature}\n【输入价格】￥{self.format_price(self.input_price)}/千 Tokens\n【输出价格】￥{self.format_price(self.output_price)}/千 Tokens\n【预置规则】{self.system_prompt}"
+        )
+
+    def format_price(self, value):
+        return f"{value:.10f}".rstrip("0").rstrip(".")
+
+    def mask_secret(self, value, show_start=4, show_end=4, mask="****"):
+        """
+        密钥脱敏
+
+        :param value: 原始密钥
+        :param show_start: 保留开头字符数
+        :param show_end: 保留结尾字符数
+        :param mask: 脱敏字符
+        """
+        if not value:
+            return value
+
+        value = str(value)
+
+        length = len(value)
+
+        # 太短直接隐藏
+        if length <= show_start + show_end:
+            return mask
+
+        return value[:show_start] + mask + value[-show_end:]
+
+    @staticmethod
+    def _get_val(config, key: str, default: str = ""):
+        def normalize(value):
+            return str(value).replace("_", "").replace("-", "").lower()
+
+        target = normalize(key)
+
+        def search(data):
+            if isinstance(data, dict):
+                for k, v in data.items():
+                    if normalize(k) == target:
+                        return v
+
+                    result = search(v)
+                    if result is not None:
+                        return result
+
+            elif isinstance(data, list):
+                for item in data:
+                    result = search(item)
+                    if result is not None:
+                        return result
+
+            return None
+
+        result = search(config)
+
+        return default if result is None else result
+
+    @staticmethod
+    def format_prompt(prompt, parameters={}):
+        """
+        格式化数据，替换字符串中的模板占位符
+
+        Args:
+            msg (str): 需要格式化的字符串，支持 {{变量名}} 形式的占位符
+            parameters (dict): 额外的参数字典，用于替换msg中对应的占位符
+                             格式为 {key: value}
+
+        Returns:
+            str: 替换占位符后的字符串
+        """
+
+        def replace_var(match):
+            var_name = match.group(1).strip()
+            return str(parameters.get(var_name, match.group(0)))
+
+        pattern = r"\{\{\s*([^{}]+?)\s*\}\}"
+        prompt = re.sub(pattern, replace_var, prompt)
+
+        # 返回格式化后的字符串
+        return prompt

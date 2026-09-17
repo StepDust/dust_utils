@@ -34,7 +34,8 @@ class MarkdownAstParser:
         if self.md is None:
             from markdown_it import MarkdownIt
 
-            self.md = MarkdownIt()
+            # 启用 GFM 表格规则，否则默认 commonmark 预设不解析表格
+            self.md = MarkdownIt().enable("table")
         return self.md.parse(md_text)
 
 
@@ -120,6 +121,7 @@ class MdToDocx:
             self.doc = self.Document()
 
         self._enable_doc_grid()
+        self._ensure_default_styles()
 
         logger.info("正在解析Markdown文档结构...")
         tokens = self.parser.parse(md_text)
@@ -181,6 +183,16 @@ class MdToDocx:
                 # 再写入 Word
                 self._write_list_to_word(nodes)
                 i = next_i
+                continue  # 跳过 i += 1
+
+            # 表格处理
+            elif t.type == "table_open":
+                # 找到 table_close，整段交给表格写入
+                end = i
+                while end < len(tokens) and tokens[end].type != "table_close":
+                    end += 1
+                self._write_table(tokens[i : end + 1])
+                i = end
                 continue  # 跳过 i += 1
 
             # 普通段落 + 图片
@@ -613,7 +625,171 @@ class MdToDocx:
 
     # endregion
 
+    # region 表格处理
+
+    def _write_table(self, table_tokens):
+        """
+        将表格 tokens 写入 Word 文档
+
+        单元格样式：优先使用样式配置中的 table 样式，未配置时回退到 text 样式；
+        单元格内容固定左对齐、无首行缩进、无段前段后间距，表头行加粗。
+
+        Args:
+            table_tokens (list): table_open 到 table_close 之间的 token 列表
+        """
+        self._ensure_docx()
+        rows = self._parse_table_rows(table_tokens)
+        if not rows:
+            return
+
+        col_count = max(len(cells) for _, cells in rows)
+        if col_count == 0:
+            return
+
+        table = self.doc.add_table(rows=len(rows), cols=col_count)
+        try:
+            table.style = "Table Grid"
+        except KeyError:
+            logger.warning("文档模板中不存在 Table Grid 样式，表格将不显示边框")
+
+        for row_index, (is_header, cells) in enumerate(rows):
+            for col_index, inline_token in enumerate(cells):
+                paragraph = table.cell(row_index, col_index).paragraphs[0]
+                if inline_token is not None:
+                    self._handle_inline(
+                        inline_token, paragraph=paragraph, paragraph_style="text"
+                    )
+                self._set_table_cell_style(paragraph)
+                if is_header:
+                    for run in paragraph.runs:
+                        run.font.bold = True
+
+    def _parse_table_rows(self, table_tokens):
+        """
+        解析表格 tokens 为行结构
+
+        Args:
+            table_tokens (list): table_open 到 table_close 之间的 token 列表
+
+        Returns:
+            list[tuple[bool, list]]: 每行为 (是否表头, 单元格 inline token 列表)
+        """
+        rows = []
+        in_header = False
+
+        i = 0
+        while i < len(table_tokens):
+            t = table_tokens[i]
+
+            if t.type == "thead_open":
+                in_header = True
+            elif t.type == "thead_close":
+                in_header = False
+            elif t.type == "tr_open":
+                cells = []
+                j = i + 1
+                while j < len(table_tokens) and table_tokens[j].type != "tr_close":
+                    if table_tokens[j].type in ("th_open", "td_open"):
+                        inline_token = None
+                        j += 1
+                        # 收集单元格内的 inline token
+                        while j < len(table_tokens) and table_tokens[j].type not in (
+                            "th_close",
+                            "td_close",
+                        ):
+                            if table_tokens[j].type == "inline":
+                                inline_token = table_tokens[j]
+                            j += 1
+                        cells.append(inline_token)
+                    j += 1
+                rows.append((in_header, cells))
+                i = j
+
+            i += 1
+
+        return rows
+
+    def _set_table_cell_style(self, paragraph):
+        """
+        表格单元格段落样式：套用 table 样式（未配置时回退 text 样式），
+        并固定左对齐、无首行缩进、无段前段后间距
+
+        Args:
+            paragraph (docx.text.paragraph.Paragraph): 单元格段落对象
+        """
+        style_name = "table" if "table" in self.styles else "text"
+        self._set_paragraph_style(paragraph, style_name)
+
+        p_format = paragraph.paragraph_format
+        p_format.alignment = self.WD_ALIGN_PARAGRAPH.LEFT
+        p_format.first_line_indent = self.Pt(0)
+        p_format.space_before = self.Pt(0)
+        p_format.space_after = self.Pt(0)
+
+    # endregion
+
     # region 样式设置
+
+    def _ensure_default_styles(self):
+        """补齐模板中缺失的 python-docx 默认样式。"""
+
+        from docx import Document
+        from docx.enum.style import WD_STYLE_TYPE
+
+        styles = self.doc.styles
+        default_styles = Document().styles
+
+        for source_style in default_styles:
+            try:
+                styles[source_style.name]
+                continue
+            except KeyError:
+                pass
+
+            try:
+                target_style = styles.add_style(
+                    source_style.name,
+                    source_style.type,
+                )
+            except Exception:
+                continue
+
+            # 基础样式
+            if source_style.base_style is not None:
+                try:
+                    target_style.base_style = styles[source_style.base_style.name]
+                except KeyError:
+                    pass
+
+            # 字体
+            try:
+                target_style.font.name = source_style.font.name
+                target_style.font.size = source_style.font.size
+                target_style.font.bold = source_style.font.bold
+                target_style.font.italic = source_style.font.italic
+                target_style.font.underline = source_style.font.underline
+            except Exception:
+                pass
+
+            # 段落
+            if source_style.type == WD_STYLE_TYPE.PARAGRAPH:
+                try:
+                    source_format = source_style.paragraph_format
+                    target_format = target_style.paragraph_format
+
+                    target_format.alignment = source_format.alignment
+                    target_format.left_indent = source_format.left_indent
+                    target_format.right_indent = source_format.right_indent
+                    target_format.first_line_indent = source_format.first_line_indent
+                    target_format.space_before = source_format.space_before
+                    target_format.space_after = source_format.space_after
+                    target_format.line_spacing = source_format.line_spacing
+                    target_format.keep_together = source_format.keep_together
+                    target_format.keep_with_next = source_format.keep_with_next
+                    target_format.page_break_before = source_format.page_break_before
+                    target_format.widow_control = source_format.widow_control
+                except Exception:
+                    pass
 
     def _set_paragraph_style(self, paragraph, style_name):
         """

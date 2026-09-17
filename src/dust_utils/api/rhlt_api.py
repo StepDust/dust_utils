@@ -4,6 +4,7 @@ import requests  # 用于发送HTTP请求
 import os  # 用于文件和目录操作
 import re
 import json
+from pathlib import Path
 from .api_utils import ApiUtils
 
 # 创建模块专用记录器
@@ -28,7 +29,7 @@ class RHLTAPI:
 
         if not token_str:
             raise ValueError("请求api时，token不能为空")
-        self.token_str = token_str  # 存储token
+        self.token_str = token_str.strip()  # 存储token
         self.headers = {"Authorization": token_str}  # 设置请求头
         self.base_url = "https://renhelitai.com/prod-api"  # API基础URL
         # 软著名称后缀映射关系，用于标识不同类型的软件
@@ -211,6 +212,8 @@ class RHLTAPI:
         response = requests.post(
             url, params=params, files=files, headers=self.headers, timeout=600
         )
+        logger.object(response.json(), f"上传文件 {filePath} 响应内容")
+
         if response.status_code == 200:
             return response.json()
         elif response.status_code == 504:
@@ -329,3 +332,167 @@ class RHLTAPI:
         return save_path
 
     # endregion
+
+    # region 一些工具函数
+
+    @staticmethod
+    def download_code_by_url(code_url, zip_url, output_folder):
+        """
+        下载源码和材料文件，并将其保存到指定的输出路径。
+        """
+        from dust_utils.file_utils import ArchiveUtils
+
+        zip_folder = ""
+        code_folder = ""
+        os.makedirs(output_folder, exist_ok=True)
+
+        if code_url:
+            code_folder = os.path.join(output_folder, "code.zip")
+            logger.debug(f"存储路径：{output_folder}")
+
+            logger.debug(f"开始下载代码：{code_url}")
+
+            code_folder = Path(code_folder)
+
+            if code_folder.exists():
+                logger.debug("代码存在，跳过下载...")
+            else:
+                response = requests.get(code_url, stream=True)
+                response.raise_for_status()
+
+                with code_folder.open("wb") as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+
+            code_folder = ArchiveUtils.extract_archive(
+                archive_path=str(code_folder.resolve()), is_delete=True
+            )
+
+        if zip_url:
+
+            zip_folder = Path(os.path.join(output_folder, os.path.basename(zip_url)))
+            logger.debug(f"开始下载材料：{zip_url}")
+            if zip_folder.exists():
+                logger.debug("材料存在，跳过下载...")
+            else:
+                response = requests.get(
+                    f"https://rhlt.oss-cn-beijing.aliyuncs.com/{zip_url}", stream=True
+                )
+                response.raise_for_status()
+
+                with zip_folder.open("wb") as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+
+            zip_folder = ArchiveUtils.extract_archive(
+                archive_path=str(zip_folder.resolve()), is_delete=True
+            )
+        return code_folder, zip_folder
+
+    # endregion
+
+
+class RHLTDB:
+    from dust_utils.db_utils import MySQLClient
+
+    def __init__(self, db_client: MySQLClient):
+        """
+        初始化RHLTDB类，设置数据库访问所需的基本配置。
+        """
+        self.db_client = db_client
+
+    def get_bus_case(
+        self,
+        case_id: str | int | None = None,
+        case_name="",
+        distributer_id: str | int | None = None,
+    ):
+
+        def _get_page_struct(case_id):
+            sql_str = f"SELECT\
+                            c.case_id,\
+                            c.case_name,\
+                            pr.id AS '分组id',\
+                            pr.pweb_cn_name AS '分组名称',\
+                            r.id AS '页面id',\
+                            r.web_cn_name AS '页面名称',\
+                            r.web_page_desc AS '页面描述',\
+                            r.update_time AS '更新日期'\
+                            FROM\
+                            bus_case_web_rel r\
+                            LEFT JOIN bus_case c ON c.case_id = r.case_id\
+                            LEFT JOIN bus_case_web_p_rel pr ON pr.id = r.pid\
+                            WHERE\
+                            c.case_id = {case_id};"
+
+            data = self.db_client.query(sql_str)
+
+            page_struct = []
+            group_map = {}
+
+            for row in data:
+                group_id = row["分组id"]
+                group_name = row["分组名称"]
+                page_name = row["页面名称"]
+
+                if group_id not in group_map:
+                    group_map[group_id] = {"groupName": group_name, "pageList": []}
+                    page_struct.append(group_map[group_id])
+
+                group_map[group_id]["pageList"].append({"pageName": page_name})
+
+            return page_struct
+
+        def _get_dev_lang_name(dev_lang_code):
+            if not dev_lang_code:
+                return []
+
+            code_list = dev_lang_code.split(",")
+
+            language_map = {
+                "5": "html",
+                "1000": "C",
+                "2000": "C#",
+                "3000": "C++",
+                "4000": "Java",
+                "5000": "Python",
+                "6000": "MATLAB",
+                "7000": "GO",
+                "8000": "PHP",
+                "9000": "JavaScript",
+            }
+
+            return [language_map.get(code.strip(), "未知") for code in code_list]
+
+        # 获取基本信息
+        sql_str = "select d.id as distributer_id,c.case_id,d.case_name,c.dev_lang_code,c.code_path,c.final_zip_path,c.version_info from bus_distributer d \
+                left join bus_case_receiver r on d.id = r.bus_distributer_id \
+                left join bus_case c on c.case_id = r.case_id"
+        case_id = "" if case_id is None else str(case_id).strip()
+        case_name = case_name.strip()
+        distributer_id = "" if distributer_id is None else str(distributer_id).strip()
+
+        if len(case_id) > 0:
+            sql_str += f" where r.case_id = '{case_id}'"
+            logger.debug(f"查询软著信息：case_id = {case_id}")
+        elif len(case_name) > 0:
+            sql_str += f" where d.case_name = '{case_name}'"
+            logger.debug(f"查询软著信息：case_name = {case_name}")
+        elif len(distributer_id) > 0:
+            sql_str += f" where d.id = '{distributer_id}'"
+            logger.debug(f"查询软著信息：distributer_id = {distributer_id}")
+
+        data = self.db_client.query(sql_str)
+
+        if len(data) == 0:
+            logger.error("未查询到相关数据，请检查输入的软著编号或软著名称是否正确！")
+            return {}
+
+        result = data[0]
+
+        result["page_struct"] = _get_page_struct(result["case_id"])
+        result["dev_lang_code"] = _get_dev_lang_name(result["dev_lang_code"])
+
+        return result

@@ -100,7 +100,9 @@ def color_msg(msg, color, log_type="info"):
     if not callable(log_method):
         raise ValueError(f"不支持的日志类型: {log_type}")
 
-    log_method(f"<fg {color}>{msg}</>")
+    logger.info(msg)
+    # log_method(f"{msg}")
+    # log_method(f"<fg={color}>{msg}</>")
 
 
 def get_pack_config():
