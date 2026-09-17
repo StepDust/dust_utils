@@ -90,7 +90,23 @@ def get_log_path():
     return log_file
 
 
+def escape_color_tags(msg) -> str:
+    """把内容里的 "<" 转义为 loguru 认可的字面量写法。
+
+    仅用于无法使用参数插值的场景（见 color_msg 的说明）。
+    """
+    return str(msg).replace("<", "\\<")
+
+
 def color_msg(msg, color, log_type="info"):
+    """按指定颜色输出日志，msg 中的 <> 一律按字面量处理。
+
+    原理：loguru 在 colors=True 时，只对日志字符串中的 **字面部分** 解析颜色标签；
+    通过 {...} 插值进来的参数走 AnsiParser.feed(value, raw=True)，
+    会被原样插入、不参与标签解析（见 loguru/_colorizer.py:436）。
+    所以把用户内容作为参数传入，而不是拼进字面串，就无需手工转义，
+    也不会出现 "a < b > c" 里孤立 "<" 转义后残留反斜杠的问题。
+    """
     log_method = getattr(
         logger.bind(color=color).opt(colors=True),
         log_type.lower(),
@@ -100,10 +116,8 @@ def color_msg(msg, color, log_type="info"):
     if not callable(log_method):
         raise ValueError(f"不支持的日志类型: {log_type}")
 
-    # logger.info(msg)
-    safe = str(msg).replace("<", "\\<").replace(">", "\\>")
-    logger.info(safe)
-    log_method(f"<fg {safe}>{msg}</>")
+    # 字面部分只保留我们自己写的颜色标签，用户内容走参数插值
+    log_method("<fg " + str(color) + ">{}</>", msg)
 
 
 def get_pack_config():

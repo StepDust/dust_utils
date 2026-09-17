@@ -315,7 +315,9 @@ def test_txt_to_image():
 def test_loguru():
 
     print(id(logger))
-    logger.color_msg("111</>", color="#f00")
+    logger.color_msg("111</>", color="#f00")  # 期望：111</>
+    logger.color_msg("<red>假标签</red>", color="#f00")  # 期望：<red>假标签</red>
+    logger.color_msg("a < b > c", color="#f00")  # 期望：a < b > c
 
     return
     logger.debug("这是一个调试日志")
