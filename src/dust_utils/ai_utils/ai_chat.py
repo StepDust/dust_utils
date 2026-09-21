@@ -7,6 +7,7 @@ import os
 from enum import Enum
 from urllib.parse import urlsplit, urlunsplit, quote
 import hashlib
+from dust_utils import CommonUtils
 
 # 创建模块专用记录器
 from loguru import logger
@@ -56,11 +57,11 @@ class AIChat:
                 "检测到未安装 openai。请执行 'pip install openai' 以使用此功能。"
             )
 
-        self.base_url = AIChat._get_val(config, "baseUrl")
-        self.api_key = AIChat._get_val(config, "apiKey")
-        self.model = AIChat._get_val(config, "model")
-        self.system_prompt = AIChat._get_val(config, "systemPrompt")
-        self.temperature = float(AIChat._get_val(config, "temperature", "0.2"))
+        self.base_url = CommonUtils.get_value(config, "baseUrl")
+        self.api_key = CommonUtils.get_value(config, "apiKey")
+        self.model = CommonUtils.get_value(config, "model")
+        self.system_prompt = CommonUtils.get_value(config, "systemPrompt")
+        self.temperature = CommonUtils.get_value(config, "temperature", 0.2)
         self.chat_model = ChatModel.RESPONSES  # 默认使用 Responses API
 
         # 初始化ai角色定义
@@ -81,11 +82,13 @@ class AIChat:
         self.file_cache = {}
 
         # 输入金额定价
-        self.input_price = AIChat._get_val(config, "inputPrice") / 1000  # 输入金额定价
+        self.input_price = (
+            CommonUtils.get_value(config, "inputPrice", 0) / 1000
+        )  # 输入金额定价
         self.input_price = 0 if self.input_price == "" else self.input_price / 1000
 
         # 输出金额定价
-        self.output_price = AIChat._get_val(config, "outputPrice") / 1000
+        self.output_price = CommonUtils.get_value(config, "outputPrice", 0) / 1000
         self.output_price = 0 if self.output_price == "" else self.output_price / 1000
 
         self.price = 0  # 已使用总金额
@@ -794,83 +797,8 @@ class AIChat:
 
     def print_info(self):
         logger.info(
-            f"当前模型信息如下：\n【请求地址】{self.base_url}\n【模型名称】{self.model}\n【密钥信息】{self.mask_secret(self.api_key)}\n【请求模式】{str(self.chat_model.name)}\n【模型温度】{self.temperature}\n【输入价格】￥{self.format_price(self.input_price)}/千 Tokens\n【输出价格】￥{self.format_price(self.output_price)}/千 Tokens\n【预置规则】{self.system_prompt}"
+            f"当前模型信息如下：\n【请求地址】{self.base_url}\n【模型名称】{self.model}\n【密钥信息】{CommonUtils.mask_secret(self.api_key)}\n【请求模式】{str(self.chat_model.name)}\n【模型温度】{self.temperature}\n【输入价格】￥{self.format_price(self.input_price)}/千 Tokens\n【输出价格】￥{self.format_price(self.output_price)}/千 Tokens\n【预置规则】{self.system_prompt}"
         )
 
     def format_price(self, value):
         return f"{value:.10f}".rstrip("0").rstrip(".")
-
-    def mask_secret(self, value, show_start=4, show_end=4, mask="****"):
-        """
-        密钥脱敏
-
-        :param value: 原始密钥
-        :param show_start: 保留开头字符数
-        :param show_end: 保留结尾字符数
-        :param mask: 脱敏字符
-        """
-        if not value:
-            return value
-
-        value = str(value)
-
-        length = len(value)
-
-        # 太短直接隐藏
-        if length <= show_start + show_end:
-            return mask
-
-        return value[:show_start] + mask + value[-show_end:]
-
-    @staticmethod
-    def _get_val(config, key: str, default: str = ""):
-        def normalize(value):
-            return str(value).replace("_", "").replace("-", "").lower()
-
-        target = normalize(key)
-
-        def search(data):
-            if isinstance(data, dict):
-                for k, v in data.items():
-                    if normalize(k) == target:
-                        return v
-
-                    result = search(v)
-                    if result is not None:
-                        return result
-
-            elif isinstance(data, list):
-                for item in data:
-                    result = search(item)
-                    if result is not None:
-                        return result
-
-            return None
-
-        result = search(config)
-
-        return default if result is None else result
-
-    @staticmethod
-    def format_prompt(prompt, parameters={}):
-        """
-        格式化数据，替换字符串中的模板占位符
-
-        Args:
-            msg (str): 需要格式化的字符串，支持 {{变量名}} 形式的占位符
-            parameters (dict): 额外的参数字典，用于替换msg中对应的占位符
-                             格式为 {key: value}
-
-        Returns:
-            str: 替换占位符后的字符串
-        """
-
-        def replace_var(match):
-            var_name = match.group(1).strip()
-            return str(parameters.get(var_name, match.group(0)))
-
-        pattern = r"\{\{\s*([^{}]+?)\s*\}\}"
-        prompt = re.sub(pattern, replace_var, prompt)
-
-        # 返回格式化后的字符串
-        return prompt

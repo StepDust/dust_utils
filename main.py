@@ -7,14 +7,18 @@ logger = setup_loguru()
 from dust_utils.file_utils.md_to_docx import MdToDocx
 from dust_utils.ai_utils import AIChat
 import os
+import re
 import json
+from urllib.parse import unquote
 from dotenv import load_dotenv
 
 load_dotenv(r"E:\Share\配置文件\.env")
 
 
 def test_md_to_word():
-    md_path = r"C:\Users\Administered\Desktop\国土空间规划制图与数据分析系统 使用说明书V1.0.md"
+    md_path = (
+        r"test_config\md_to_config\仓储库存数据监控与异动预警平台 使用说明书V1.0.md"
+    )
     fm_folder = r"C:\Users\Administered\Desktop\封面"
 
     fm_list = [
@@ -167,7 +171,8 @@ def test_md_to_word():
     ]
 
     with open(md_path, "r", encoding="utf-8") as f:
-        md_text = f.read()
+        md_content = remove_repeated_images(f.read().split("\n"))
+        md_text = "\n".join(md_content)
 
         md_to_docx = MdToDocx()
 
@@ -287,6 +292,120 @@ def test_md_to_word():
             )
 
 
+def remove_repeated_images(content_list: list[str]):
+    """删除 markdown 中重复出现的图片。
+
+    规则：
+    1. 统计每个图片名称的出现次数，只处理出现 >1 次的；
+    2. 对每个重复组，逐个判断该图片所在区域（上方标题 + 该标题到下一个标题
+       之间的正文）内容是否包含图片名称；
+    3. 只有一个区域包含名称 -> 只保留那一个，其余删除；
+       全都包含、或全都不包含 -> 保留第一次出现的，其余删除。
+
+    Args:
+        content_list: markdown 原文
+    """
+
+    IMAGE_RE = re.compile(
+        r"!\[(?P<alt>[^\]]*)\]\(\s*(?P<url>[^)\s]+)(?:\s+[\"'][^\"']*[\"'])?\s*\)"
+    )
+    HEADING_RE = re.compile(r"^(?P<hashes>#{1,6})\s+(?P<title>.+?)\s*#*\s*$")
+
+    def _parse_image_name(url: str, alt: str = "") -> str:
+        """从图片 URL 推导图片名称。
+
+        例：``.../35473/21.库龄分层.png`` -> ``库龄分层``
+        推导失败时回退到 alt 文本。
+        """
+        base = unquote(url.split("?")[0].split("#")[0]).rstrip("/").rsplit("/", 1)[-1]
+        base = os.path.splitext(base)[0]
+        base = re.sub(r"^\d+\s*[.\-_、\s]*", "", base).strip()
+        return base or alt.strip()
+
+    def _section_bounds(lines: list[str], idx: int) -> tuple[int, int]:
+        """返回图片所在区域的 [start, end) 行范围。
+
+        区域以「上方最近的标题」为起点、「下方最近的标题」为终点（不含）。
+        """
+        start = 0
+        for j in range(idx - 1, -1, -1):
+            if HEADING_RE.match(lines[j]):
+                start = j
+                break
+
+        end = len(lines)
+        for j in range(idx + 1, len(lines)):
+            if HEADING_RE.match(lines[j]):
+                end = j
+                break
+
+        return start, end
+
+    def _region_text(lines: list[str], idx: int) -> str:
+        """取图片所在区域的内容。
+
+        含上方标题，不含下方标题（下方标题仅作边界、不参与匹配），
+        并剔除区域内所有图片语法。
+
+        剔除图片语法很关键：图片自身的 alt 文本通常就等于图片名称，
+        若不剔除，每个区域都会「包含名称」，判定必然失效。
+        """
+        start, end = _section_bounds(lines, idx)
+        parts = []
+        for j in range(start, end):
+            if j == idx:
+                continue
+            parts.append(IMAGE_RE.sub("", lines[j]))
+        return "\n".join(parts)
+
+    occurrences: dict[str, list[tuple[int, re.Match]]] = {}
+    for i, line in enumerate(content_list):
+        for m in IMAGE_RE.finditer(line):
+            name = _parse_image_name(m.group("url"), m.group("alt"))
+            occurrences.setdefault(name, []).append((i, m))
+
+    drop_lines: set[int] = set()
+    reports: list[dict] = []
+
+    for name, items in occurrences.items():
+        if len(items) < 2:
+            continue
+
+        hits = [name in _region_text(content_list, i) for i, _ in items]
+
+        if sum(hits) == 1:
+            keep = hits.index(True)
+            reason = "仅一处区域包含图片名称"
+        else:
+            keep = 0
+            reason = "全部区域都包含" if all(hits) else "所有区域都不包含"
+
+        reports.append(
+            {
+                "name": name,
+                "count": len(items),
+                "lines": [i + 1 for i, _ in items],
+                "region_hits": hits,
+                "keep_line": items[keep][0] + 1,
+                "drop_lines": [i + 1 for k, (i, _) in enumerate(items) if k != keep],
+                "reason": reason,
+            }
+        )
+
+        drop_lines.update(i for k, (i, _) in enumerate(items) if k != keep)
+
+    # 删除图片行时，顺带删掉相邻的一个空行，避免留下连续空行
+    for i in list(drop_lines):
+        if i + 1 < len(content_list) and not content_list[i + 1].strip():
+            drop_lines.add(i + 1)
+        elif i - 1 >= 0 and not content_list[i - 1].strip():
+            drop_lines.add(i - 1)
+
+    new_content = (ln for i, ln in enumerate(content_list) if i not in drop_lines)
+
+    return new_content
+
+
 def test_txt_to_image():
     logger.info("<fg #ff0000>这是红色</>")
 
@@ -336,6 +455,6 @@ def test_loguru():
 if __name__ == "__main__":
     # picui_key = os.getenv("PICUI_KEY")
     # logger.info(picui_key)
-    # test_md_to_word()
+    test_md_to_word()
     # test_txt_to_image()
-    test_loguru()
+    # test_dedup_md_images()

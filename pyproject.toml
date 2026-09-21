@@ -30,7 +30,7 @@ wx = ["wxPython"]
 flet = ["flet"]
 md = ['markdown-it-py', 'python-docx', 'pillow']
 pdf = ['pillow']
-wps = ["pywin32", "PyPDF2"]
+wps = ["pywin32", "PyPDF2", 'python-docx', 'openpyxl']
 oss = ["oss2>=2.19.1"]
 crypto = ["cryptography>=46.0.6"]
 
