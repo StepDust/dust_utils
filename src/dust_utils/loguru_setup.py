@@ -5,7 +5,8 @@ import json
 import time
 from loguru import logger
 import loguru
-
+import uuid
+from contextlib import contextmanager, AbstractContextManager
 from typing import Protocol, cast
 
 
@@ -49,30 +50,30 @@ def safe_to_dict(
     return obj
 
 
-def logger_divider(message="", max_len=50, char="=", *args, **kwargs):
+def logger_divider(msg="", max_len=50, char="=", *args, **kwargs):
     """记录 DIVIDER 分隔线日志"""
     import wcwidth
 
-    message = message.rstrip()
-    if len(message) > 0:
-        message = f" {message} "
+    msg = str(msg).rstrip()
+    if len(msg) > 0:
+        msg = f" {msg} "
 
-    msg_width = wcwidth.wcswidth(message)
+    msg_width = wcwidth.wcswidth(msg)
     if msg_width >= max_len:
-        logger.opt(depth=1).log("DIVIDER", message)
+        logger.opt(depth=1).log("DIVIDER", msg)
         return
     if msg_width >= max_len - 5:
         padding = char * (max_len - msg_width - 1)
-        show_msg = f"{padding} {message}"
+        show_msg = f"{padding} {msg}"
     else:
         left_padding = char * 5
         right_padding = char * (max_len - msg_width - 7)
-        show_msg = f"{left_padding}{message}{right_padding}"
+        show_msg = f"{left_padding}{msg}{right_padding}"
     # 跳过当前函数、再跳过包装函数，定位到调用的代码处
     logger.opt(depth=1).log("DIVIDER", show_msg)
 
 
-def logger_object(object: dict | list, message="变量值如下：", *args, **kwargs):
+def logger_object(object: dict | list, msg="变量值如下：", *args, **kwargs):
     """记录对象日志"""
     if object is None:
         logger.log(logging.INFO, "这是一个空对象", *args, stacklevel=3, **kwargs)
@@ -80,7 +81,7 @@ def logger_object(object: dict | list, message="变量值如下：", *args, **kw
     data = safe_to_dict(object, max_depth=5)
     # 跳过当前函数、再跳过包装函数，定位到调用的代码处
     logger.opt(depth=1).info(
-        f"{message}\n{json.dumps(data, ensure_ascii=False, indent=2, default=repr)}"
+        f"{msg}\n{json.dumps(data, ensure_ascii=False, indent=2, default=repr)}"
     )
 
 
@@ -147,7 +148,55 @@ def get_pack_config():
     return base_folder, format_rule
 
 
-def setup_loguru(log_folder="logs", disabled_list=[]):
+@contextmanager
+def bind_log(
+    file_path: str,
+    context: dict | None = None,
+    main_log: bool = False,
+    *,
+    format: str | None = None,
+    encoding: str = "utf-8",
+):
+    """
+    将当前上下文中的日志输出到指定文件。
+
+    Args:
+        file_path: 日志文件路径
+        context: 绑定到日志记录中的上下文，例如 {"task_id": "xxx"}
+        main_log: 是否同时输出到主日志，默认 False
+        format: 文件日志格式，为 None 时使用默认格式
+        encoding: 文件编码
+    """
+    os.makedirs(os.path.dirname(os.path.abspath(file_path)), exist_ok=True)
+
+    route_id = uuid.uuid4().hex
+
+    context = context or {}
+    context = {
+        **context,
+        "_bind_log_id": route_id,
+    }
+
+    if format is None:
+        base_folder, format = get_pack_config()
+
+    sink_id = logger.add(
+        file_path,
+        encoding=encoding,
+        backtrace=False,
+        filter=lambda record: (record["extra"].get("_bind_log_id") == route_id),
+        format=format,
+    )
+
+    try:
+        with logger.contextualize(**context):
+            yield logger
+    finally:
+        logger.remove(sink_id)
+
+
+def setup_loguru(log_folder="logs", disabled_list=[], file_name: str = ""):
+    """ """
 
     os.makedirs(log_folder, exist_ok=True)
 
@@ -193,9 +242,11 @@ def setup_loguru(log_folder="logs", disabled_list=[]):
             filter=filter_lambda,
         )
 
-    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    if not file_name:
+        file_name = time.strftime("%Y%m%d_%H%M%S")
+
     global log_file
-    log_file = os.path.join(base_folder, log_folder, f"{timestamp}.log")
+    log_file = os.path.join(base_folder, log_folder, f"{file_name}.log")
 
     # 文件输出（自动切割）
     logger.add(
@@ -218,6 +269,7 @@ def setup_loguru(log_folder="logs", disabled_list=[]):
     logger.object = logger_object
     logger.get_log_path = get_log_path
     logger.color_msg = color_msg
+    logger.bind_log = bind_log
 
     # 核心语法，将自定义的logger对象赋值给 loguru.logger
     # 这样在其他模块中直接使用 loguru.logger 就能获得增强功能，同时保持原有的 import 方式不变
@@ -236,10 +288,19 @@ class LoggerExtension(Protocol):
     def success(self, msg, *args, **kwargs): ...
     def critical(self, msg, *args, **kwargs): ...
 
-    def divider(self, msg, *args, **kwargs): ...
-    def object(self, object, msg="变量值如下：", *args, **kwargs): ...
+    def divider(self, msg, max_len, char, *args, **kwargs): ...
+    def object(self, object, msg, *args, **kwargs): ...
     def get_log_path(self) -> str: ...
-    def color_msg(self, msg, color, log_type="info") -> str: ...
+    def color_msg(self, msg, color, log_type="info"): ...
+    def bind_log(
+        self,
+        file_path: str,
+        context: dict[str, Any] | None = None,
+        main_log: bool = False,
+        *,
+        format: str | None = None,
+        encoding: str = "utf-8",
+    ) -> AbstractContextManager: ...
 
 
 # 👉 关键：不改 import 方式，但增强 IDE

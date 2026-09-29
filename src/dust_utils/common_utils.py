@@ -2,6 +2,7 @@ from datetime import date, time, datetime, timedelta
 
 from collections.abc import Sequence
 from typing import TypeVar, Any
+from loguru import logger
 
 T = TypeVar("T")
 
@@ -167,7 +168,12 @@ class CommonUtils:
 
         def replace_var(match) -> str:
             var_name = match.group(1).strip()
-            return CommonUtils.get_value(parameters, var_name, match.group(0))
+            value = CommonUtils.get_value(parameters, var_name, match.group(0))
+
+            if value is None:
+                return ""
+
+            return str(value)
 
         pattern = r"\{\{\s*([^{}]+?)\s*\}\}"
         # 这种替换可以兼容包含特殊字符的content
@@ -215,5 +221,107 @@ class CommonUtils:
                 return default if v is None else v
 
         return default
+
+    # endregion
+
+    # region 网络工具
+
+    @staticmethod
+    def download_file(
+        url: str, save_folder: str, save_path: str = None, is_cover: bool = True
+    ) -> str:
+        """
+        下载文件
+
+        Args:
+            url: 要查询的字典。
+            save_dir: 保存的文件夹
+
+        Returns:
+            文件下载后的路径
+        """
+        import os
+        import requests
+        from urllib.parse import unquote
+
+        os.makedirs(save_folder, exist_ok=True)
+
+        filename = unquote(os.path.basename(url.split("?", 1)[0]))
+        if not save_path:
+            save_path = os.path.join(save_folder, filename)
+
+        if os.path.exists(save_path) and not is_cover:
+            return save_path
+
+        file_info = CommonUtils.get_file_info(url)
+
+        if not file_info.get("exists", False):
+            logger.warning(f"文件不存在：{url}")
+            return ""
+
+        response = requests.get(url, timeout=60)
+        response.raise_for_status()
+
+        with open(save_path, "wb") as f:
+            f.write(response.content)
+
+        return save_path
+
+    @staticmethod
+    def get_file_info(url):
+
+        import os
+        import requests
+        from urllib.parse import urlparse, unquote
+
+        response = requests.head(
+            url,
+            allow_redirects=True,
+            timeout=10,
+        )
+
+        headers = response.headers
+
+        # 文件是否存在
+        exists = response.status_code == 200
+
+        # 文件名
+        filename = None
+        content_disposition = headers.get("Content-Disposition")
+
+        if content_disposition:
+            for part in content_disposition.split(";"):
+                part = part.strip()
+
+                if part.startswith("filename*="):
+                    filename = unquote(part.split("=", 1)[1].strip().strip('"'))
+                    if "''" in filename:
+                        filename = filename.split("''", 1)[1]
+                    break
+
+                if part.startswith("filename="):
+                    filename = part.split("=", 1)[1].strip().strip('"')
+                    break
+
+        if not filename:
+            filename = os.path.basename(unquote(urlparse(response.url).path))
+
+        content_length = headers.get("Content-Length")
+        size = int(content_length) if content_length else None
+
+        return {
+            "exists": exists,
+            "status_code": response.status_code,
+            "filename": filename or None,
+            "size": size,
+            "size_mb": round(size / 1024 / 1024, 2) if size is not None else None,
+            "content_type": headers.get("Content-Type"),
+            "last_modified": headers.get("Last-Modified"),
+            "etag": headers.get("ETag"),
+            "accept_ranges": headers.get("Accept-Ranges"),
+            "content_disposition": content_disposition,
+            "url": url,
+            "final_url": response.url,
+        }
 
     # endregion

@@ -791,8 +791,9 @@ class AIChat:
         if suffix:
             suffix = "\t" + suffix
 
-        logger.info(
-            f"<fg {self.statistics_color}>{prefix}总Token：{self.useToken}\t总金额: {(self.price):.6f}元\t总响应时间：{self.useTime:.2f}秒\tAI模型：{self.model}\t总次数: {(self.sendCount)}{suffix}</>"
+        logger.color_msg(
+            f"{prefix}总Token：{self.useToken}\t总金额: {(self.price):.6f}元\t总响应时间：{self.useTime:.2f}秒\tAI模型：{self.model}\t总次数: {(self.sendCount)}{suffix}",
+            self.statistics_color,
         )
 
     def print_info(self):
