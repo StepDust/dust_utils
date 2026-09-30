@@ -148,6 +148,42 @@ def get_pack_config():
     return base_folder, format_rule
 
 
+# =========================
+# 子任务日志路由
+# =========================
+# 每个 bind_log 上下文都会把标记写入日志记录的 extra：
+#   _bind_log_id        -> 当前（最内层）路由 id
+#   _bind_log_main_log  -> 该路由是否仍保留在主日志
+# 子任务文件 sink 只放行与本路由 id 一致的记录；主日志 sink 则拦截
+# 所有标记为「不写主日志」的记录（见 _make_main_filter）。
+
+
+def _make_route_filter(route_id: str):
+    """生成子任务文件 sink 的过滤器：只放行当前上下文的日志。"""
+
+    def route_filter(record) -> bool:
+        return record["extra"].get("_bind_log_id") == route_id
+
+    return route_filter
+
+
+def _make_main_filter(base_filter=None):
+    """包装主日志 sink 的过滤器，避免子任务日志重复写入主日志。
+
+    只有 bind_log(..., main_log=False)（默认值）开启的上下文会被拦截；
+    未进入任何 bind_log 上下文的普通日志不受影响。
+    """
+
+    def main_filter(record) -> bool:
+        # 当前上下文显式声明“不写主日志”则拦截
+        if record["extra"].get("_bind_log_main_log") is False:
+            return False
+
+        return True if base_filter is None else bool(base_filter(record))
+
+    return main_filter
+
+
 @contextmanager
 def bind_log(
     file_path: str,
@@ -155,26 +191,34 @@ def bind_log(
     main_log: bool = False,
     *,
     format: str | None = None,
-    encoding: str = "utf-8",
 ):
     """
-    将当前上下文中的日志输出到指定文件。
+    将当前上下文中的日志输出到指定文件，实现子任务日志分离。
 
     Args:
-        file_path: 日志文件路径
+        file_path: 日志文件路径（相对路径按当前工作目录解析）
         context: 绑定到日志记录中的上下文，例如 {"task_id": "xxx"}
-        main_log: 是否同时输出到主日志，默认 False
+        main_log: 是否同时输出到主日志，默认 False（子任务日志不污染主日志）
         format: 文件日志格式，为 None 时使用默认格式
-        encoding: 文件编码
+
+    说明:
+        - 日志按「最内层」上下文路由：嵌套调用时，内层的所有日志只写内层
+          文件，外层文件在内层期间不再接收日志，内层退出后自动恢复。
+        - 主日志 sink 由 setup_loguru() 统一加上过滤，因此 main_log=False
+          时才真正生效；自行 logger.add 的 sink 不受本参数控制。
     """
-    os.makedirs(os.path.dirname(os.path.abspath(file_path)), exist_ok=True)
+    # 归一化为绝对路径，避免结果随当前工作目录漂移
+    file_path = os.path.abspath(file_path)
+    file_dir = os.path.dirname(file_path)
+    if file_dir:
+        os.makedirs(file_dir, exist_ok=True)
 
     route_id = uuid.uuid4().hex
 
-    context = context or {}
     context = {
-        **context,
+        **(context or {}),
         "_bind_log_id": route_id,
+        "_bind_log_main_log": main_log,
     }
 
     if format is None:
@@ -182,9 +226,9 @@ def bind_log(
 
     sink_id = logger.add(
         file_path,
-        encoding=encoding,
+        encoding="utf-8",
         backtrace=False,
-        filter=lambda record: (record["extra"].get("_bind_log_id") == route_id),
+        filter=_make_route_filter(route_id),
         format=format,
     )
 
@@ -198,7 +242,11 @@ def bind_log(
 def setup_loguru(log_folder="logs", disabled_list=[], file_name: str = ""):
     """ """
 
-    os.makedirs(log_folder, exist_ok=True)
+    base_folder, stdout_format = get_pack_config()
+
+    # 与主日志文件同根目录，避免创建目录和写文件落在不同位置
+    log_dir = os.path.join(base_folder, log_folder)
+    os.makedirs(log_dir, exist_ok=True)
 
     logger.remove()
 
@@ -231,8 +279,6 @@ def setup_loguru(log_folder="logs", disabled_list=[], file_name: str = ""):
     # 用于过滤日志记录器，排除掉不需要的库的日志输出
     filter_lambda = lambda record: not (record["name"] or "").startswith(filter_tuple)
 
-    base_folder, stdout_format = get_pack_config()
-
     if sys.stdout:
         logger.add(
             sys.stdout,
@@ -249,13 +295,15 @@ def setup_loguru(log_folder="logs", disabled_list=[], file_name: str = ""):
     log_file = os.path.join(base_folder, log_folder, f"{file_name}.log")
 
     # 文件输出（自动切割）
+    # filter 包装后：标记 main_log=False 的子任务日志不会再写进主日志，
+    # 只落在各自 bind_log 指定的文件里
     logger.add(
         log_file,
         rotation="10 MB",
         retention="7 days",
         encoding="utf-8",
         backtrace=False,
-        filter=filter_lambda,
+        filter=_make_main_filter(filter_lambda),
         format=(
             "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
             "<level>{level: <8}</level> | "
@@ -288,7 +336,7 @@ class LoggerExtension(Protocol):
     def success(self, msg, *args, **kwargs): ...
     def critical(self, msg, *args, **kwargs): ...
 
-    def divider(self, msg, max_len, char, *args, **kwargs): ...
+    def divider(self, msg, max_len=50, char="=", *args, **kwargs): ...
     def object(self, object, msg, *args, **kwargs): ...
     def get_log_path(self) -> str: ...
     def color_msg(self, msg, color, log_type="info"): ...
