@@ -289,7 +289,7 @@ def setup_loguru(log_folder="logs", disabled_list=[], file_name: str = ""):
         )
 
     if not file_name:
-        file_name = time.strftime("%Y%m%d_%H%M%S")
+        file_name = time.strftime("%Y%m%d")
 
     global log_file
     log_file = os.path.join(base_folder, log_folder, f"{file_name}.log")

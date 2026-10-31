@@ -4,6 +4,10 @@ import zipfile
 import tarfile
 import gzip
 from pathlib import Path
+import os
+import stat
+import time
+import shutil
 
 from loguru import logger
 
@@ -61,7 +65,8 @@ class ArchiveUtils:
         # 3. 处理删除标志
         if is_delete and os.path.exists(extract_path):
             try:
-                shutil.rmtree(extract_path)
+                ArchiveUtils.remove_dir(extract_path)
+                # shutil.rmtree(extract_path)
             except Exception as e:
                 logger.error(f"删除目录 {extract_path} 失败: {str(e)}")
                 raise
@@ -376,3 +381,44 @@ class ArchiveUtils:
                 result.append(file)
 
         return result
+
+    @staticmethod
+    def remove_readonly(func, path, exc_info):
+        try:
+            os.chmod(path, stat.S_IWRITE)
+            func(path)
+        except Exception:
+            raise
+
+    @staticmethod
+    def remove_dir(path, retry=5):
+        for i in range(retry):
+            try:
+                shutil.rmtree(path, onerror=ArchiveUtils.remove_readonly)
+                logger.info(f"删除目录：{path}")
+                return True
+            except PermissionError as e:
+                if i == retry - 1:
+                    logger.error(f"删除目录 {path} 失败: {e}")
+                    return False
+
+                time.sleep(1)
+                logger.warning(f"删除目录失败，第 {i + 1}/{retry} 次重试：{path}")
+
+        return False
+
+
+if __name__ == "__main__":
+    from pathlib import Path
+
+    archive_path = Path(
+        r"C:\Users\Administered\Desktop\源码导出\模板\32459\code.zip"
+    )  # 替换为实际的压缩包路径
+
+    with archive_path.open("rb") as f:
+        header = f.read(16)
+
+    print(f"压缩包路径：{archive_path}")
+    print(f"文件大小：{archive_path.stat().st_size:,} bytes")
+    print(f"文件头：{header!r}")
+    print(f"文件头 HEX：{header.hex(' ')}")

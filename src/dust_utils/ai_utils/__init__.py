@@ -1,3 +1,3 @@
-from .ai_chat import AIChat
+from .ai_chat import AIChat, ChatModel
 
-__all__ = ["AIChat"]
+__all__ = ["AIChat", "ChatModel"]

@@ -2,6 +2,7 @@ import requests
 import json
 import time
 from pathlib import Path
+from datetime import datetime
 import re
 import os
 from enum import Enum
@@ -60,7 +61,7 @@ class AIChat:
         self.base_url = CommonUtils.get_value(config, "baseUrl")
         self.api_key = CommonUtils.get_value(config, "apiKey")
         self.model = CommonUtils.get_value(config, "model")
-        self.system_prompt = CommonUtils.get_value(config, "systemPrompt")
+        self.system_prompt = CommonUtils.get_value(config, "systemPrompt", "")
         self.temperature = CommonUtils.get_value(config, "temperature", 0.2)
         self.chat_model = ChatModel.RESPONSES  # 默认使用 Responses API
 
@@ -169,13 +170,13 @@ class AIChat:
 
         except requests.exceptions.RequestException as e:
             logger.error(f"请求发生错误: {e}")
-            return None
+            return vars(e)
         except json.JSONDecodeError as e:
             logger.error(f"响应解析错误: {e}")
-            return None
+            return vars(e)
         except Exception as e:
             logger.error(f"发生未知错误: {e}")
-            return None
+            return vars(e)
 
     def _upload_file_list(self, file_list=[]):
         """
@@ -201,7 +202,11 @@ class AIChat:
         if "aliyuncs" in self.base_url:
             purpose = "file-extract"
 
-        for file_path in file_list:  # 文件完整路径
+        # 当前任务已经使用的文件
+        current_file_ids = set()
+
+        # 先把缓存中的文件加入当前使用集合
+        for file_path in file_list:
             md5 = hashlib.md5()
 
             with open(file_path, "rb") as f:
@@ -211,16 +216,83 @@ class AIChat:
             md5_key = md5.hexdigest()
 
             if md5_key in self.file_cache:
-                result.append(self.file_cache.get(md5_key))
+                current_file_ids.add(self.file_cache[md5_key])
+
+        cleanup_retry = False
+
+        for i, file_path in enumerate(file_list):
+
+            md5 = hashlib.md5()
+
+            with open(file_path, "rb") as f:
+                for chunk in iter(lambda: f.read(8192), b""):
+                    md5.update(chunk)
+
+            md5_key = md5.hexdigest()
+
+            logger.info(f"上传进度：{i + 1}/{len(file_list)}\t{file_path}")
+
+            # 本地缓存命中
+            if md5_key in self.file_cache:
+                file_id = self.file_cache[md5_key]
+
+                result.append(file_id)
+                current_file_ids.add(file_id)
+
                 continue
 
-            uploaded = self.client.files.create(
-                file=Path(file_path),
-                purpose=purpose,
-            )
-            self.file_cache[md5_key] = uploaded.id
-            result.append(uploaded.id)
+            try:
+                uploaded = self.client.files.create(
+                    file=Path(file_path),
+                    purpose=purpose,
+                )
 
+                file_id = uploaded.id
+
+                self.file_cache[md5_key] = file_id
+                result.append(file_id)
+                current_file_ids.add(file_id)
+
+            except Exception as e:
+
+                error_message = str(e)
+
+                # 文件数量达到上限
+                if (
+                    "Upload file number exceed limit." in error_message
+                    and not cleanup_retry
+                ):
+                    cleanup_retry = True
+
+                    logger.warning(
+                        "远程文件数量达到上限，" "开始清理非当前任务文件后重试..."
+                    )
+
+                    self.cleanup_unused_files(current_file_ids=current_file_ids)
+
+                    # 清理后重新尝试当前文件
+                    try:
+                        uploaded = self.client.files.create(
+                            file=Path(file_path),
+                            purpose=purpose,
+                        )
+
+                        file_id = uploaded.id
+
+                        self.file_cache[md5_key] = file_id
+                        result.append(file_id)
+                        current_file_ids.add(file_id)
+
+                        logger.info(f"清理后重新上传成功：{file_path}")
+
+                    except Exception:
+                        logger.exception(f"清理后重新上传仍然失败：{file_path}")
+                        raise
+
+                else:
+                    raise
+
+        logger.info(f"文件上传完毕...")
         return result
 
     def _check_list_type(self, file_list):
@@ -501,11 +573,11 @@ class AIChat:
             }
         ]
 
-    def delete_file_cache(self, file_list: str | list = None):
+    def delete_file_cache(self, file_list: str | list = []):
         """
         删除上传至服务器的文件
         """
-        if file_list is None:
+        if not file_list:
             file_list = list(self.file_cache.values())
 
         elif isinstance(file_list, str):
@@ -518,14 +590,109 @@ class AIChat:
         logger.info("开始删除文件...")
 
         for file_id in file_list:
-            try:
-                self.client.files.delete(file_id)
-            except Exception as e:
-                print(f"删除文件失败 {file_id}: {e}")
+            while True:
+                try:
+                    self.client.files.delete(file_id)
+                    logger.info(f"已删除文件：{file_id}")
+                    break
+
+                except Exception as e:
+                    error_msg = str(e)
+
+                    if "429" in error_msg and "rate_limit_error" in error_msg:
+                        logger.warning(
+                            f"删除文件触发限流：{file_id}，等待 30 秒后重试..."
+                        )
+                        time.sleep(30)
+                        continue
+
+                    logger.error(f"删除文件失败 {file_id}: {e}")
+                    break
 
         logger.info(f"已删除文件：{file_count}")
 
         self.file_cache.clear()
+
+    def cleanup_unused_files(self, current_file_ids=None):
+        """
+        清理远程文件。
+
+        current_file_ids:
+            当前正在使用/需要保留的远程文件 ID 集合
+        """
+
+        if current_file_ids is None:
+            current_file_ids = set()
+        else:
+            current_file_ids = set(current_file_ids)
+
+        logger.warning("开始查询远程文件...")
+
+        try:
+            file_list = self.client.files.list()
+
+            remote_files = file_list.data
+
+            # 如果有分页，继续查询
+            while getattr(file_list, "has_more", False):
+                if not remote_files:
+                    break
+
+                last_file_id = remote_files[-1].id
+
+                file_list = self.client.files.list(
+                    after=last_file_id,
+                    limit=2000,
+                )
+
+                remote_files.extend(file_list.data)
+
+            file_count = len(remote_files)
+            count_len = len(str(file_count))
+            logger.info(f"查询到远程文件：{len(remote_files)} 个")
+
+            delete_count = 0
+
+            for file_info in remote_files:
+                file_id = file_info.id
+
+                # 当前任务正在使用的文件不删除
+                if file_id in current_file_ids:
+                    continue
+
+                try:
+                    self.client.files.delete(file_id)
+                    delete_count += 1
+                    logger.info(
+                        f"删除文件({delete_count:>{count_len}}/{file_count})："
+                        f"{file_id}\t{file_info.filename}\t"
+                        f"{datetime.fromtimestamp(file_info.created_at):%Y-%m-%d %H:%M:%S}"
+                    )
+                except Exception as e:
+                    logger.warning(f"删除远程文件失败：{file_id}\t{e}")
+
+            logger.info(f"远程文件清理完成，共删除：{delete_count} 个")
+
+            # 清理本地缓存中已经不再存在的文件
+            remote_file_ids = {
+                file_info.id
+                for file_info in remote_files
+                if file_info.id in current_file_ids
+            }
+
+            remove_cache_keys = []
+
+            for md5_key, file_id in self.file_cache.items():
+                if file_id not in remote_file_ids:
+                    remove_cache_keys.append(md5_key)
+
+            for md5_key in remove_cache_keys:
+                self.file_cache.pop(md5_key, None)
+
+            logger.info(f"本地文件缓存清理：{len(remove_cache_keys)} 个")
+
+        except Exception as e:
+            logger.exception(f"清理远程文件失败：{e}")
 
     def fix_json(self, json_str, out_obj=True):
         """
