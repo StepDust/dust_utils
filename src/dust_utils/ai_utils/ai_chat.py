@@ -58,9 +58,9 @@ class AIChat:
                 "检测到未安装 openai。请执行 'pip install openai' 以使用此功能。"
             )
 
-        self.base_url = CommonUtils.get_value(config, "baseUrl")
-        self.api_key = CommonUtils.get_value(config, "apiKey")
-        self.model = CommonUtils.get_value(config, "model")
+        self.base_url = CommonUtils.get_value(config, "baseUrl", "")
+        self.api_key = CommonUtils.get_value(config, "apiKey", "")
+        self.model = CommonUtils.get_value(config, "model", "")
         self.system_prompt = CommonUtils.get_value(config, "systemPrompt", "")
         self.temperature = CommonUtils.get_value(config, "temperature", 0.2)
         self.chat_model = ChatModel.RESPONSES  # 默认使用 Responses API

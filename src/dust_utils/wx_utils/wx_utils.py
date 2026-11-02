@@ -870,14 +870,19 @@ class WxUtils:
         if not message_text.endswith("\n"):
             message_text += "\n"
 
-        # 提取颜色（支持 fg、bg、颜色名、十六进制）
+        # 提取 Loguru 颜色标签
         pattern = r"<(fg|bg)\s+([^>]+)>"
         match = re.search(pattern, message_text)
-        color_type = match.group(1) if match else None  # 'fg' 或 'bg'
-        color_value = match.group(2) if match else None  # '#ff0000' 或 'red'
 
-        # 清除所有标签，得到纯文本
-        message_text = re.sub(r"<[^>]*>", "", message_text)
+        color_type = match.group(1) if match else None
+        color_value = match.group(2) if match else None
+
+        # 仅清除 Loguru 颜色标签，不删除 HTML 标签
+        message_text = re.sub(
+            r"</?(?:fg|bg)(?:\s+[^>]*)?>",
+            "",
+            message_text,
+        )
 
         if color_value:
             level_color = color_value
