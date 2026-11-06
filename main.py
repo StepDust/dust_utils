@@ -30,148 +30,16 @@ def test_md_to_word():
     with open(r"test_config\md_to_config\style.json", "r", encoding="utf-8") as f:
         styles = json.load(f)
 
-    color_list = styles["color_list"]
+    color_list = styles.get("color_list", {})
 
-    cover_desc = [
-        "软著说明书",
-        "说明书",
-        "使用说明书",
-        "软件说明书",
-        "软件使用说明书",
-        "软件操作说明书",
-        "软件功能说明书",
-        "软件技术说明书",
-        "软件应用明书",
-        "软件运行说明书",
-        "软件使用手册",
-        "软件操作手册",
-        "软件用户手册",
-        "软件功能手册",
-        "软件应用手册",
-        "用户使用手册",
-        "用户操作手册",
-        "用户说明书",
-        "系统使用说明书",
-        "系统操作说明书",
-        "系统说明书",
-        "系统功能说明书",
-        "系统应用说明书",
-        "系统运行说明书",
-        "系统使用手册",
-        "系统操作手册",
-        "系统用户册",
-        "软件使用指南",
-        "软件操作指南",
-        "软件用户指南",
-        "软件应用指南",
-        "软件使用指引",
-        "软件操作指引",
-        "系统使用指南",
-        "系统操作指南",
-        "系统用户指南",
-        "软件说明",
-        "软件使用说明",
-        "软件操作说明",
-        "软件功能说明",
-    ]
-    font_name_list = [
-        "宋体",
-        "黑体",
-        "楷体",
-        "仿宋",
-        "新宋体",
-        "微软雅黑",
-        "等线",
-        "等线 Light",
-        "隶书",
-        "幼圆",
-    ]
-    case_name_colors = [
-        # 黑 / 深灰
-        "#000000",
-        "#1D1D1F",
-        "#202124",
-        "#24292F",
-        "#37352F",
-        "#334155",
-        # 蓝
-        "#1F4E79",
-        "#2F75B5",
-        "#1A73E8",
-        "#0969DA",
-        "#0066CC",
-        "#1677FF",
-        # 靛蓝 / 紫蓝
-        "#283593",
-        "#3949AB",
-        # 绿
-        "#385723",
-        "#548235",
-        # 深灰蓝
-        "#1E293B",
-        "#374151",
-    ]
-    cover_desc_colors = [
-        # 黑灰
-        "#333333",
-        "#404040",
-        "#555555",
-        "#666666",
-        "#787774",
-        "#86868B",
-        # 蓝
-        "#5B9BD5",
-        "#5C6BC0",
-        "#4096FF",
-        "#64748B",
-        # 中灰蓝
-        "#57606A",
-        "#475569",
-        # 绿
-        "#548235",
-        # 紫蓝
-        "#3949AB",
-    ]
-    page_number_formats = [
-        # 纯数字
-        ("", ""),
-        # 中文
-        ("第 ", " 页"),
-        ("第", "页"),
-        ("第 ", "页"),
-        ("页 ", ""),
-        ("页码 ", ""),
-        # 英文
-        ("Page ", ""),
-        ("No. ", ""),
-        ("P. ", ""),
-        ("Pg. ", ""),
-        # 括号
-        ("(", ")"),
-        ("（", "）"),
-        ("[", "]"),
-        ("【", "】"),
-        # 分隔符
-        ("— ", " —"),
-        ("- ", " -"),
-        ("· ", " ·"),
-        ("• ", " •"),
-        ("/ ", " /"),
-        ("| ", " |"),
-        # 更偏文档风格
-        ("第 ", " 页"),
-        ("页码：", ""),
-        ("页码 ", ""),
-        ("Page ", ""),
-        ("PAGE ", ""),
-        # 带空格的简洁样式
-        ("[ ", " ]"),
-        ("( ", " )"),
-        ("— ", " —"),
-    ]
+    cover_desc = styles.get("cover_desc", [])
+    font_name_list = styles.get("font_name_list", [])
+    case_name_colors = styles.get("case_name_colors", [])
+    cover_desc_colors = styles.get("cover_desc_colors", [])
+    page_number_formats = styles.get("page_number_formats", [])
 
     with open(md_path, "r", encoding="utf-8") as f:
-        md_content = remove_repeated_images(f.read().split("\n"))
+        md_content = f.read().split("\n")
         md_text = "\n".join(md_content)
 
         md_to_docx = MdToDocx()
@@ -235,20 +103,10 @@ def test_md_to_word():
             )
 
             # 页眉对齐
-            header_align = random.choice(
-                [
-                    "left",
-                    "center",
-                ]
-            )
+            header_align = random.choice(["left", "center"])
 
             # 页码位置
-            page_number_position = random.choice(
-                [
-                    "header",
-                    "footer",
-                ]
-            )
+            page_number_position = random.choice(["header", "footer"])
 
             # 根据页码位置决定页码对齐
             if page_number_position == "header":
@@ -290,120 +148,6 @@ def test_md_to_word():
                 prefix=number_format[0],
                 suffix=number_format[1],
             )
-
-
-def remove_repeated_images(content_list: list[str]):
-    """删除 markdown 中重复出现的图片。
-
-    规则：
-    1. 统计每个图片名称的出现次数，只处理出现 >1 次的；
-    2. 对每个重复组，逐个判断该图片所在区域（上方标题 + 该标题到下一个标题
-       之间的正文）内容是否包含图片名称；
-    3. 只有一个区域包含名称 -> 只保留那一个，其余删除；
-       全都包含、或全都不包含 -> 保留第一次出现的，其余删除。
-
-    Args:
-        content_list: markdown 原文
-    """
-
-    IMAGE_RE = re.compile(
-        r"!\[(?P<alt>[^\]]*)\]\(\s*(?P<url>[^)\s]+)(?:\s+[\"'][^\"']*[\"'])?\s*\)"
-    )
-    HEADING_RE = re.compile(r"^(?P<hashes>#{1,6})\s+(?P<title>.+?)\s*#*\s*$")
-
-    def _parse_image_name(url: str, alt: str = "") -> str:
-        """从图片 URL 推导图片名称。
-
-        例：``.../35473/21.库龄分层.png`` -> ``库龄分层``
-        推导失败时回退到 alt 文本。
-        """
-        base = unquote(url.split("?")[0].split("#")[0]).rstrip("/").rsplit("/", 1)[-1]
-        base = os.path.splitext(base)[0]
-        base = re.sub(r"^\d+\s*[.\-_、\s]*", "", base).strip()
-        return base or alt.strip()
-
-    def _section_bounds(lines: list[str], idx: int) -> tuple[int, int]:
-        """返回图片所在区域的 [start, end) 行范围。
-
-        区域以「上方最近的标题」为起点、「下方最近的标题」为终点（不含）。
-        """
-        start = 0
-        for j in range(idx - 1, -1, -1):
-            if HEADING_RE.match(lines[j]):
-                start = j
-                break
-
-        end = len(lines)
-        for j in range(idx + 1, len(lines)):
-            if HEADING_RE.match(lines[j]):
-                end = j
-                break
-
-        return start, end
-
-    def _region_text(lines: list[str], idx: int) -> str:
-        """取图片所在区域的内容。
-
-        含上方标题，不含下方标题（下方标题仅作边界、不参与匹配），
-        并剔除区域内所有图片语法。
-
-        剔除图片语法很关键：图片自身的 alt 文本通常就等于图片名称，
-        若不剔除，每个区域都会「包含名称」，判定必然失效。
-        """
-        start, end = _section_bounds(lines, idx)
-        parts = []
-        for j in range(start, end):
-            if j == idx:
-                continue
-            parts.append(IMAGE_RE.sub("", lines[j]))
-        return "\n".join(parts)
-
-    occurrences: dict[str, list[tuple[int, re.Match]]] = {}
-    for i, line in enumerate(content_list):
-        for m in IMAGE_RE.finditer(line):
-            name = _parse_image_name(m.group("url"), m.group("alt"))
-            occurrences.setdefault(name, []).append((i, m))
-
-    drop_lines: set[int] = set()
-    reports: list[dict] = []
-
-    for name, items in occurrences.items():
-        if len(items) < 2:
-            continue
-
-        hits = [name in _region_text(content_list, i) for i, _ in items]
-
-        if sum(hits) == 1:
-            keep = hits.index(True)
-            reason = "仅一处区域包含图片名称"
-        else:
-            keep = 0
-            reason = "全部区域都包含" if all(hits) else "所有区域都不包含"
-
-        reports.append(
-            {
-                "name": name,
-                "count": len(items),
-                "lines": [i + 1 for i, _ in items],
-                "region_hits": hits,
-                "keep_line": items[keep][0] + 1,
-                "drop_lines": [i + 1 for k, (i, _) in enumerate(items) if k != keep],
-                "reason": reason,
-            }
-        )
-
-        drop_lines.update(i for k, (i, _) in enumerate(items) if k != keep)
-
-    # 删除图片行时，顺带删掉相邻的一个空行，避免留下连续空行
-    for i in list(drop_lines):
-        if i + 1 < len(content_list) and not content_list[i + 1].strip():
-            drop_lines.add(i + 1)
-        elif i - 1 >= 0 and not content_list[i - 1].strip():
-            drop_lines.add(i - 1)
-
-    new_content = (ln for i, ln in enumerate(content_list) if i not in drop_lines)
-
-    return new_content
 
 
 def test_txt_to_image():

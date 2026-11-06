@@ -496,3 +496,26 @@ class RHLTDB:
         result["dev_lang_code"] = _get_dev_lang_name(result["dev_lang_code"])
 
         return result
+
+    def clear_error_info(
+        self, distributer_id: int | None = None, case_id: int | None = None
+    ):
+        """清除错误信息，用于推进继续制件"""
+
+        if (distributer_id is None) == (case_id is None):
+            raise ValueError("distributer_id 和 case_id 必须且只能提供一个")
+
+        sql = ""
+        result = 0
+        if case_id:
+            sql = "update  bus_case set err_info = Null where case_id %s"
+            result = self.db_client.execute(sql, (case_id))
+        if distributer_id:
+            sql = "UPDATE bus_case c \
+                    JOIN bus_case_receiver r ON r.case_id = c.case_id \
+                    SET c.err_info = NULL \
+                    WHERE r.bus_distributer_id = %s"
+            result = self.db_client.execute(sql, (distributer_id))
+
+        logger.success(f"成功清除错误信息：影响行数：{result}")
+        return result

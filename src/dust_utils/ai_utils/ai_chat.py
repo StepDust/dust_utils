@@ -92,12 +92,13 @@ class AIChat:
         self.output_price = CommonUtils.get_value(config, "outputPrice", 0) / 1000
         self.output_price = 0 if self.output_price == "" else self.output_price / 1000
 
-        self.price = 0  # 已使用总金额
-        self.useToken = 0  # 已使用总token
-        self.useTime = 0  # 已使用总时间
+        self.price: float = 0  # 已使用总金额
+        self.useToken: float = 0  # 已使用总token
+        self.useTime: float = 0  # 已使用总时间
+        self.response_time: float = 0  # 当前对话使用的时间
 
         # 其他信息
-        self.sendCount = 0  # 发送次数
+        self.sendCount: int = 0  # 发送次数
 
         # 实例化ai连接
         self.client = self.openai(
@@ -143,8 +144,8 @@ class AIChat:
             response_content, usage = self._call_api(prompt, image_list, file_list)
 
             # 计算响应时间
-            response_time = time.time() - start_time
-            self.useTime += response_time  # 累计使用时间
+            self.response_time = time.time() - start_time
+            self.useTime += self.response_time  # 累计使用时间
 
             # 计算本次对话的token使用量和金额
             input_token = usage["prompt_tokens"]
@@ -161,7 +162,7 @@ class AIChat:
             logger.info(response_content + "")
             # 输出黄色的token使用量和本次对话金额
             logger.color_msg(
-                f"使用Token: {input_token + output_token}\t金额: {this_send_price:.6f}元\t响应时间: {response_time:.2f}秒\tAI模型: {self.model}\tbaseURL: {self.base_url}\t{str(self.chat_model.name)}",
+                f"使用Token: {input_token + output_token}\t金额: {this_send_price:.6f}元\t响应时间: {self.response_time:.2f}秒\tAI模型: {self.model}\tbaseURL: {self.base_url}\t{str(self.chat_model.name)}",
                 color=self.log_color,
             )
 

@@ -70,6 +70,7 @@ def logger_divider(msg="", max_len=50, char="=", *args, **kwargs):
         right_padding = char * (max_len - msg_width - 7)
         show_msg = f"{left_padding}{msg}{right_padding}"
     # 跳过当前函数、再跳过包装函数，定位到调用的代码处
+    logger.info("\n\n")
     logger.opt(depth=1).log("DIVIDER", show_msg)
 
 
