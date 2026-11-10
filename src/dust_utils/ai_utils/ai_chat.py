@@ -860,7 +860,7 @@ class AIChat:
         #     logger.error(f"{error_msg}")
         #     raise ValueError(error_msg)
 
-    def fix_code(self, code, additional_tags=[]):
+    def fix_code(self, code, additional_tags=[], exclude_tags=[]):
         """
         移除代码字符串中的代码块标记（如```python等）
 
@@ -934,19 +934,22 @@ class AIChat:
         ]
 
         if additional_tags:
-            languages.extend(additional_tags)
+            languages.extend(tag.strip().lower() for tag in additional_tags)
+
+        if exclude_tags:
+            exclude_tags = [tag.strip().lower() for tag in exclude_tags]
+            languages = [tag for tag in languages if tag not in exclude_tags]
 
         if not code:
             return ""
 
-        # 使用正则表达式移除所有语言的代码块标记
         for lang in languages:
-            # 使用re.escape转义语言名，避免元字符引发正则错误
-            pattern = re.compile(rf"```{re.escape(lang)}[\s\n]", re.IGNORECASE)
-            code = pattern.sub("", code)
+            pattern = re.compile(
+                rf"```{re.escape(lang)}[ \t]*\r?\n(.*?)\r?\n```",
+                re.IGNORECASE | re.DOTALL,
+            )
 
-        # 移除剩余的代码块标记和换行符
-        code = code.replace("```", "")
+            code = pattern.sub(lambda m: m.group(1), code)
 
         return code
 
@@ -964,9 +967,18 @@ class AIChat:
             self.statistics_color,
         )
 
-    def print_info(self):
+    def print_info(self, prefix="默认"):
         logger.info(
-            f"当前模型信息如下：\n【请求地址】{self.base_url}\n【模型名称】{self.model}\n【密钥信息】{CommonUtils.mask_secret(self.api_key)}\n【请求模式】{str(self.chat_model.name)}\n【模型温度】{self.temperature}\n【输入价格】￥{self.format_price(self.input_price)}/千 Tokens\n【输出价格】￥{self.format_price(self.output_price)}/千 Tokens\n【预置规则】{self.system_prompt}"
+            f"\n"
+            f"【配置名称】\t{prefix}\n"
+            f"【请求地址】\t{self.base_url}\n"
+            f"【模型名称】\t{self.model}\n"
+            f"【密钥信息】\t{CommonUtils.mask_secret(self.api_key)}\n"
+            f"【请求模式】\t{self.chat_model.name}\n"
+            f"【模型温度】\t{self.temperature}\n"
+            f"【输入价格】\t￥{self.format_price(self.input_price)}/千 Tokens\n"
+            f"【输出价格】\t￥{self.format_price(self.output_price)}/千 Tokens\n"
+            f"【预置规则】\t{self.system_prompt}\n"
         )
 
     def format_price(self, value):

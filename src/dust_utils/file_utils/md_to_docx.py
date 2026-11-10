@@ -5,6 +5,31 @@ import io
 
 from loguru import logger
 
+from .diagram_render import DiagramRenderer
+from .md_math import MathItem, MathPreprocessor
+
+# Mermaid / LaTeX / 代码块的默认渲染选项，可在 convert(render={...}) 中覆盖
+DEFAULT_RENDER_OPTIONS = {
+    "mermaid": True,  # 是否渲染 ```mermaid 代码块
+    "math": True,  # 是否渲染 LaTeX 公式
+    "code_block": True,  # 普通代码块是否按等宽文本写入
+    "allow_online": False,  # 是否允许在线服务兜底，默认全离线
+    "mermaid_engine": "auto",  # auto / mmdc / browser（kroki / mermaid_ink 需 allow_online）
+    "mermaid_theme": "default",
+    "mermaid_background": "white",
+    "mermaid_scale": 2.0,  # 图表截图清晰度倍数
+    "mermaid_width": None,  # 插入宽度（英寸），None 表示按图表自然尺寸
+    "latex_engine": "auto",  # auto / mathjax / matplotlib（codecogs 需 allow_online）
+    "math_dpi": 240,
+    "mermaid_js": None,  # 本地 mermaid.min.js 路径
+    "mathjax_js": None,  # 本地 tex-svg.js 路径
+    "browser_path": None,  # 本地 Edge / Chrome 路径
+    "browser_size": (1800, 1300),
+    "code_font": "Consolas",
+    "cache_dir": None,
+    "timeout": 60,
+}
+
 # region 辅助类
 
 
@@ -80,6 +105,11 @@ class MdToDocx:
         # {random.randint(0, 0xFFFFFFFF):08X}
         self.numbering_content = ""
 
+        # 渲染相关状态
+        self.options = dict(DEFAULT_RENDER_OPTIONS)
+        self.math = None  # MathPreprocessor，转换时按需创建
+        self.renderer = None  # DiagramRenderer，首次渲染图表/公式时创建
+
     def _ensure_docx(self):
         """
         延迟导入 python-docx 相关模块并绑定到实例属性，避免模块导入期间的开销。
@@ -103,17 +133,33 @@ class MdToDocx:
         self.OxmlElement = OxmlElement
         self._docx_loaded = True
 
-    def convert(self, md_text: str, output_path: str, styles: list = []):
+    def convert(
+        self,
+        md_text: str,
+        output_path: str,
+        styles: dict = None,
+        render: dict = None,
+    ):
         """
         执行转换流程：Markdown -> Word
 
         Args:
             md_text (str): 原始 Markdown 文本
             output_path (str): 输出 Word 文档的路径 (.docx)
-            styles (list, optional): 自定义样式配置列表. Defaults to None.
+            styles (dict, optional): 样式配置，形如 {"h1": {...}, "text": {...}}；
+                传 None 时按输出目录、当前工作目录、程序目录依次查找 style.json
+            render (dict, optional): 渲染选项，可覆盖 DEFAULT_RENDER_OPTIONS，
+                常用项：mermaid / math / code_block / mermaid_engine / latex_engine
         """
         # 确保按需加载 python-docx
         self._ensure_docx()
+
+        self.options = dict(DEFAULT_RENDER_OPTIONS)
+        if render:
+            self.options.update({k: v for k, v in render.items() if v is not None})
+
+        # 每次转换都重新收集列表编号，避免同一实例多次转换时编号重复累积
+        self.numbering_content = ""
 
         if os.path.exists(output_path):
             self.doc = self.Document(output_path)
@@ -123,18 +169,18 @@ class MdToDocx:
         self._enable_doc_grid()
         self._ensure_default_styles()
 
+        if styles is None:
+            styles = self._load_style_file(output_path)
+        self.styles = styles or {}
+
+        # 公式先替换成占位符，解析完 token 后再还原为图片
+        self.math = None
+        if self.options.get("math"):
+            self.math = MathPreprocessor()
+            md_text = self.math.extract(md_text)
+
         logger.info("正在解析Markdown文档结构...")
         tokens = self.parser.parse(md_text)
-        # 获取默认样式
-        if styles is None:
-            styles = []
-            current_folder = os.path.dirname(os.path.abspath(sys.argv[0]))
-            with open(
-                os.path.join(current_folder, "style.json"), "r", encoding="utf-8"
-            ) as f:
-                styles = json.load(f)
-                styles = styles.get("default", [])
-        self.styles = styles
 
         logger.info("正在写入Word文档...")
         self._write_tokens(tokens)
@@ -142,6 +188,36 @@ class MdToDocx:
 
         self._write_extra(output_path)
         logger.success("Word文档写入完毕！")
+
+    def _load_style_file(self, output_path: str) -> dict:
+        """
+        查找并加载 style.json，兼容 {"default": {...}} 与 {"docx_theme": {"default": {...}}} 两种结构
+        """
+        candidates = [
+            os.path.join(os.path.dirname(os.path.abspath(output_path)), "style.json"),
+            os.path.join(os.getcwd(), "style.json"),
+            os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), "style.json"),
+        ]
+
+        for path in candidates:
+            if not os.path.exists(path):
+                continue
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            except Exception as exc:
+                logger.warning(f"样式文件解析失败：{path} -> {exc}")
+                continue
+
+            theme = data.get("default")
+            if theme is None and isinstance(data.get("docx_theme"), dict):
+                theme = data["docx_theme"].get("default")
+            if isinstance(theme, dict) and theme:
+                logger.info(f"已加载样式文件：{path}")
+                return theme
+
+        logger.warning("未找到可用的 style.json，将使用 Word 默认样式")
+        return {}
 
     # region 写入内容
 
@@ -162,16 +238,13 @@ class MdToDocx:
             if t.type == "heading_open":
                 self._current_heading_level = int(t.tag[1])
 
-            # 解析标题内容
+            # 解析标题内容（标题内也可能有公式/加粗，统一交给行内处理）
             elif t.type == "inline" and hasattr(self, "_current_heading_level"):
+                level = self._current_heading_level
                 if paragraph is None:
-                    paragraph = self.doc.add_heading(
-                        t.content, level=self._current_heading_level
-                    )
-                else:
-                    paragraph.add_run(t.content)
-                # 应用标题样式
-                self._set_paragraph_style(paragraph, f"h{self._current_heading_level}")
+                    paragraph = self.doc.add_heading("", level=level)
+                self._set_paragraph_style(paragraph, f"h{level}")
+                self._handle_inline(t, paragraph, f"h{level}")
                 paragraph = None
                 # 重置标题级别
                 del self._current_heading_level
@@ -195,37 +268,285 @@ class MdToDocx:
                 i = end
                 continue  # 跳过 i += 1
 
-            # 普通段落 + 图片
+            # 代码块 / Mermaid 图表
+            elif t.type in ("fence", "code_block"):
+                self._handle_code_block(t)
+
+            # 普通段落 + 图片 + 公式
             elif t.type == "inline":
-                self._handle_inline(t, paragraph, paragraph_style)
+                item = (
+                    self.math.display_item(t.content)
+                    if (self.math is not None and paragraph is None)
+                    else None
+                )
+                if item is not None:
+                    # 整段就是块级公式，图片独占一段并居中
+                    self._add_display_math(item)
+                else:
+                    self._handle_inline(t, paragraph, paragraph_style)
 
             i += 1
 
     def _handle_inline(self, token, paragraph=None, paragraph_style=None):
         """
-        处理行内元素（如普通文本、图片等）
+        处理行内元素：文本、加粗/斜体、行内代码、图片、行内公式、换行
 
         Args:
             token (Token): 当前处理的 inline token
-            paragraph (docx.text.paragraph.Paragraph, optional): 目标段落对象
+            paragraph (docx.text.paragraph.Paragraph, optional): 目标段落对象；
+                为 None 时新建段落，已有段落（标题/列表/单元格）则只追加 run
             paragraph_style (str, optional): 样式名称
         """
-        if paragraph_style is None:
-            paragraph_style = "text"
+        style_name = paragraph_style or "text"
+        style = self.styles.get(style_name) or {}
 
-        for child in token.children:
-            if paragraph is None:
-                paragraph = self.doc.add_paragraph()
+        if paragraph is None:
+            paragraph = self.doc.add_paragraph()
+            self._set_paragraph_style(paragraph, style_name)
 
-            # ✅ 图片
-            if child.type == "image":
-                src = child.attrs.get("src")
-                self._add_image(src, paragraph)
+        bold = None
+        italic = None
 
-            # ✅ 普通文本
-            elif child.type == "text" and child.content.strip() != "":
-                paragraph.add_run(child.content)
-                self._set_paragraph_style(paragraph, paragraph_style)
+        for child in token.children or []:
+            ctype = child.type
+
+            if ctype == "strong_open":
+                bold = True
+            elif ctype == "strong_close":
+                bold = None
+            elif ctype == "em_open":
+                italic = True
+            elif ctype == "em_close":
+                italic = None
+            elif ctype == "text":
+                self._add_text(child.content, paragraph, style, bold, italic)
+            elif ctype == "softbreak":
+                self._add_run(paragraph, " ", style, bold, italic)
+            elif ctype == "hardbreak":
+                paragraph.add_run().add_break()
+            elif ctype == "html_inline":
+                if (child.content or "").strip().lower() in ("<br>", "<br/>", "<br />"):
+                    paragraph.add_run().add_break()
+            elif ctype == "code_inline":
+                self._add_run(paragraph, child.content, style, bold, italic, mono=True)
+            elif ctype == "image":
+                self._add_image(child.attrs.get("src"), paragraph)
+
+    def _add_text(self, text, paragraph, style, bold=None, italic=None):
+        """写入一段文本，其中的公式占位符会被替换为公式图片。"""
+        if not text:
+            return
+
+        for part in self.math.split(text) if self.math is not None else [text]:
+            if isinstance(part, MathItem):
+                self._add_math(part, paragraph, style)
+            elif part:
+                self._add_run(paragraph, part, style, bold, italic)
+
+    def _add_run(
+        self,
+        paragraph,
+        text,
+        style,
+        bold=None,
+        italic=None,
+        mono=False,
+    ):
+        """添加一个 run 并按样式配置设置字体。"""
+        if not text:
+            return None
+        run = paragraph.add_run(text)
+        self._format_run(run, style, bold=bold, italic=italic, mono=mono)
+        return run
+
+    # region 代码块 / 图表 / 公式
+
+    def _handle_code_block(self, token):
+        """处理 ``` 代码块：mermaid 渲染成图，其余按等宽文本写入。"""
+        info = (getattr(token, "info", "") or "").strip().split(" ")[0].lower()
+        content = token.content or ""
+        if not content.strip():
+            return
+
+        if self.options.get("mermaid") and self._is_mermaid(info, content):
+            self._add_mermaid(content)
+        elif self.options.get("code_block"):
+            self._add_code_block(content, info)
+
+    @staticmethod
+    def _is_mermaid(info: str, content: str) -> bool:
+        """判断代码块是否为 Mermaid：优先看语言标记，没有标记时看首行关键字。"""
+        if info in ("mermaid", "mmd"):
+            return True
+        if info:
+            return False
+        first = content.strip().split("\n", 1)[0].strip().lower()
+        keywords = (
+            "graph ",
+            "flowchart ",
+            "sequencediagram",
+            "classdiagram",
+            "statediagram",
+            "erdiagram",
+            "gantt",
+            "pie",
+            "mindmap",
+            "timeline",
+            "journey",
+            "quadrantchart",
+            "gitgraph",
+        )
+        return first.startswith(keywords)
+
+    def _add_mermaid(self, code: str):
+        """渲染 Mermaid 并插入为居中图片，失败时降级为代码文本。"""
+        try:
+            result = self._get_renderer().render_mermaid(
+                code,
+                engine=self.options.get("mermaid_engine", "auto"),
+                theme=self.options.get("mermaid_theme", "default"),
+                background=self.options.get("mermaid_background", "white"),
+                scale=self.options.get("mermaid_scale", 2.0),
+            )
+        except Exception as exc:
+            logger.warning(f"Mermaid 渲染失败，已降级为代码文本：{exc}")
+            self._add_code_block(code, "mermaid")
+            return
+
+        self._insert_picture(
+            result,
+            self._new_centered_paragraph(),
+            width_inch=self.options.get("mermaid_width"),
+        )
+
+    def _add_display_math(self, item: MathItem):
+        """块级公式：独占一段并居中。"""
+        paragraph = self._new_centered_paragraph()
+        self._add_math(item, paragraph, self.styles.get("text") or {})
+
+    def _add_math(self, item: MathItem, paragraph, style):
+        """把公式渲染成图片插入段落，失败时退回原文。"""
+        font_size = style.get("font_size", 11)
+        try:
+            result = self._get_renderer().render_latex(
+                item.tex,
+                engine=self.options.get("latex_engine", "auto"),
+                display=item.display,
+                font_size=font_size,
+                dpi=self.options.get("math_dpi", 240),
+            )
+        except Exception as exc:
+            logger.warning(f"公式渲染失败，已退回原文：{exc}")
+            fallback = f"$${item.tex}$$" if item.display else f"${item.tex}$"
+            self._add_run(paragraph, fallback, style)
+            return
+
+        self._insert_picture(result, paragraph)
+
+    def _add_code_block(self, code: str, info: str = ""):
+        """把代码块按等宽字体逐行写入（不缩进、单倍行距）。"""
+        style_name = "code" if "code" in self.styles else "text"
+        style = self.styles.get(style_name) or {}
+
+        lines = code.replace("\r\n", "\n").replace("\r", "\n").rstrip("\n").split("\n")
+        for line in lines:
+            paragraph = self.doc.add_paragraph()
+            self._set_paragraph_style(paragraph, style_name)
+
+            fmt = paragraph.paragraph_format
+            fmt.first_line_indent = self.Pt(0)
+            fmt.space_before = self.Pt(0)
+            fmt.space_after = self.Pt(0)
+            fmt.line_spacing = 1.0
+
+            self._add_run(paragraph, line if line.strip() else " ", style, mono=True)
+
+    def _new_centered_paragraph(self):
+        """新建一个无首行缩进、居中的段落（用于图片 / 块级公式）。"""
+        paragraph = self.doc.add_paragraph()
+        self._set_paragraph_style(paragraph, "text")
+
+        fmt = paragraph.paragraph_format
+        fmt.first_line_indent = self.Pt(0)
+        fmt.alignment = self.WD_ALIGN_PARAGRAPH.CENTER
+        fmt.space_before = self.Pt(3)
+        fmt.space_after = self.Pt(6)
+        return paragraph
+
+    def _insert_picture(self, result, paragraph, align: str = None, width_inch=None):
+        """
+        把渲染结果插入段落，按页面可用宽高等比缩放（不放大）。
+
+        Args:
+            result (RenderResult): 渲染结果
+            paragraph: 目标段落
+            align: left / center / right，None 表示不改动段落对齐
+            width_inch: 指定插入宽度（英寸），None 表示按图片自然尺寸
+        """
+        max_width, max_height = self._get_available_size(paragraph)
+
+        width = width_inch or result.width_inch or 1.0
+        if result.width_inch:
+            height = width * (result.height_inch / result.width_inch)
+        else:
+            height = result.height_inch or 1.0
+
+        scale = 1.0
+        if max_width > 0:
+            scale = min(scale, max_width / width)
+        if max_height > 0:
+            scale = min(scale, max_height / height)
+        scale = max(scale, 0.1)
+
+        run = paragraph.add_run()
+        run.add_picture(result.path, width=self.Inches(width * scale))
+
+        if align:
+            paragraph.paragraph_format.alignment = {
+                "left": self.WD_ALIGN_PARAGRAPH.LEFT,
+                "center": self.WD_ALIGN_PARAGRAPH.CENTER,
+                "right": self.WD_ALIGN_PARAGRAPH.RIGHT,
+            }.get(align)
+
+    def _get_available_size(self, paragraph=None):
+        """返回段落可用宽高（英寸），已扣除页边距与列表缩进。"""
+        section = self.doc.sections[0]
+        emu = 914400
+
+        width = (
+            (section.page_width or 0)
+            - (section.left_margin or 0)
+            - (section.right_margin or 0)
+        )
+        height = (
+            (section.page_height or 0)
+            - (section.top_margin or 0)
+            - (section.bottom_margin or 0)
+        )
+
+        if paragraph is not None:
+            level = self._get_list_level(paragraph)
+            if level >= 0:
+                width -= self.Inches(0.25 * (level + 1))
+
+        return max(width / emu, 0.0), max(height / emu, 0.0)
+
+    def _get_renderer(self) -> DiagramRenderer:
+        """延迟创建 Mermaid / LaTeX 渲染器（默认全离线）。"""
+        if self.renderer is None:
+            self.renderer = DiagramRenderer(
+                cache_dir=self.options.get("cache_dir"),
+                timeout=self.options.get("timeout", 60),
+                allow_online=bool(self.options.get("allow_online")),
+                mermaid_js=self.options.get("mermaid_js"),
+                mathjax_js=self.options.get("mathjax_js"),
+                browser_path=self.options.get("browser_path"),
+                mermaid_scale=self.options.get("mermaid_scale", 2.0),
+                browser_size=self.options.get("browser_size", (1800, 1300)),
+            )
+        return self.renderer
+
+    # endregion
 
     @logger.catch
     def _add_image(self, src: str, paragraph=None):
@@ -361,7 +682,6 @@ class MdToDocx:
         temp_path = output_path + ".tmp"
 
         if self.numbering_content.strip():
-
             abstractNum = """
             
 <w:abstractNum w:abstractNumId="999">
@@ -408,13 +728,10 @@ class MdToDocx:
             # with ZipFile(output_path, "a") as docx 打包后无法更新docx内容，需要重新打包
             with ZipFile(output_path, "r") as zin:
                 with ZipFile(temp_path, "w", ZIP_DEFLATED) as zout:
-
                     for item in zin.infolist():
-
                         data = zin.read(item.filename)
 
                         if item.filename == "word/numbering.xml":
-
                             text = data.decode("utf-8")
 
                             text = text.replace(
@@ -870,42 +1187,61 @@ class MdToDocx:
         # =====================================================
         # 3️⃣ 字符级（rPr）
         # =====================================================
+        for run in paragraph.runs:
+            self._format_run(run, style)
+
+    def _format_run(self, run, style, bold=None, italic=None, mono=False):
+        """
+        设置单个 run 的字体样式
+
+        Args:
+            run: docx 的 run 对象
+            style (dict): 样式配置
+            bold (bool, optional): 是否加粗，None 表示沿用样式配置
+            italic (bool, optional): 是否斜体，None 表示沿用样式配置
+            mono (bool): 是否使用等宽字体（行内代码 / 代码块）
+        """
+        self._ensure_docx()
+
         font_name = style.get("font_name", "微软雅黑")
         font_size = style.get("font_size", 11)
 
-        for run in paragraph.runs:
-            font = run.font
-            rPr = run._element.get_or_add_rPr()
+        if mono:
+            font_name = self.options.get("code_font", "Consolas")
+            font_size = max(font_size - 1, 8)
 
-            # ---- 字体四槽位（ascii / hAnsi / eastAsia / cs），
-            # 解决“中文字体不生效”问题
-            rFonts = rPr.get_or_add_rFonts()
-            rFonts.set(self.qn("w:ascii"), font_name)
-            rFonts.set(self.qn("w:hAnsi"), font_name)
-            rFonts.set(self.qn("w:eastAsia"), font_name)
-            rFonts.set(self.qn("w:cs"), font_name)
+        font = run.font
+        rPr = run._element.get_or_add_rPr()
 
-            # ---- 语言环境
-            lang = rPr.find(self.qn("w:lang"))
-            if lang is None:
-                lang = self.OxmlElement("w:lang")
-                rPr.append(lang)
-            lang.set(self.qn("w:val"), "en-US")
-            lang.set(self.qn("w:eastAsia"), "zh-CN")
+        # ---- 字体四槽位（ascii / hAnsi / eastAsia / cs），
+        # 解决“中文字体不生效”问题
+        rFonts = rPr.get_or_add_rFonts()
+        rFonts.set(self.qn("w:ascii"), font_name)
+        rFonts.set(self.qn("w:hAnsi"), font_name)
+        rFonts.set(self.qn("w:eastAsia"), font_name)
+        rFonts.set(self.qn("w:cs"), font_name)
 
-            # ---- 基础样式
-            font.size = self.Pt(font_size)
-            font.bold = style.get("bold", False)
-            font.italic = style.get("italic", False)
-            font.underline = style.get("underline", False)
+        # ---- 语言环境
+        lang = rPr.find(self.qn("w:lang"))
+        if lang is None:
+            lang = self.OxmlElement("w:lang")
+            rPr.append(lang)
+        lang.set(self.qn("w:val"), "en-US")
+        lang.set(self.qn("w:eastAsia"), "zh-CN")
 
-            if "font_color" in style:
-                c = style["font_color"].lstrip("#")
-                font.color.rgb = self.RGBColor(
-                    int(c[0:2], 16),
-                    int(c[2:4], 16),
-                    int(c[4:6], 16),
-                )
+        # ---- 基础样式
+        font.size = self.Pt(font_size)
+        font.bold = style.get("bold", False) if bold is None else bold
+        font.italic = style.get("italic", False) if italic is None else italic
+        font.underline = style.get("underline", False)
+
+        if "font_color" in style:
+            c = style["font_color"].lstrip("#")
+            font.color.rgb = self.RGBColor(
+                int(c[0:2], 16),
+                int(c[2:4], 16),
+                int(c[4:6], 16),
+            )
 
     def _enable_doc_grid(self):
         """

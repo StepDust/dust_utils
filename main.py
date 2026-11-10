@@ -150,6 +150,38 @@ def test_md_to_word():
             )
 
 
+def test_md_render():
+    """验证 Mermaid 图表与 LaTeX 公式插入 Word"""
+    md_path = r"test_config\md_to_config\test_render.md"
+    style_path = r"test_config\md_to_config\style.json"
+    output_path = r"test_config\md_to_config\test_render.docx"
+
+    with open(md_path, "r", encoding="utf-8") as f:
+        md_text = f.read()
+
+    with open(style_path, "r", encoding="utf-8") as f:
+        styles = json.load(f)["docx_theme"]["default"]
+
+    # convert 遇到已存在的文件会追加内容，演示时先清掉旧文件
+    if os.path.exists(output_path):
+        os.remove(output_path)
+
+    md_to_docx = MdToDocx()
+    md_to_docx.convert(
+        md_text,
+        output_path,
+        styles,
+        render={
+            # 默认全离线：mmdc/browser 渲染图表，mathjax/matplotlib 渲染公式
+            # 首次使用前先执行一次：python -m dust_utils.file_utils.diagram_render
+            "mermaid_engine": "auto",
+            "latex_engine": "auto",
+            "allow_online": False,
+        },
+    )
+    logger.success(f"已输出：{output_path}")
+
+
 def test_txt_to_image():
     logger.info("<fg #ff0000>这是红色</>")
 
@@ -199,6 +231,7 @@ def test_loguru():
 if __name__ == "__main__":
     # picui_key = os.getenv("PICUI_KEY")
     # logger.info(picui_key)
-    test_md_to_word()
+    test_md_render()
+    # test_md_to_word()
     # test_txt_to_image()
     # test_dedup_md_images()

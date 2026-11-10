@@ -4,7 +4,7 @@
 每个项目应使用独立的虚拟环境，以避免依赖冲突和版本问题。
 - 创建虚拟环境
     ```bash
-    uv venv
+    uv venv --python (Get-Command python).Source --clear
     ```
 - 初始化环境
    ```bash
@@ -47,6 +47,56 @@ python -c "import sys; print(sys.executable)"
 ```bash
 python -c "import sys; print(sys.version)"
 ```
+
+## Markdown 转 Word（支持 Mermaid 与 LaTeX，默认全部离线）
+`MdToDocx` 会先把 Markdown 里的 Mermaid 图表与 LaTeX 公式渲染成 PNG，再以图片形式插入 Word。
+**默认只使用本地引擎，文档内容不会发送到任何服务器。**
+
+- 依赖安装（`[md]` 之外再补 `[diagram]`）
+    ```bash
+    uv add "dust_utils[md,diagram]"
+    ```
+- 首次准备（只需联网一次，把 JS 资源下载到 `~/.dust_utils/assets`）
+    ```bash
+    python -m dust_utils.file_utils.diagram_render
+    ```
+    - Mermaid：本机 Edge/Chrome 无头渲染 + 本地 `mermaid.min.js`
+    - 公式：本机 Edge/Chrome 无头渲染 + 本地 MathJax `tex-svg.js`（支持完整 LaTeX）
+    - 已装 Node 的也可以 `npm i -g @mermaid-js/mermaid-cli`，走 `mmdc` 引擎
+- Markdown 写法
+    - 行内公式：`$E=mc^2$` 或 `\(E=mc^2\)`
+    - 块级公式：`$$ ... $$` 或 `\[ ... \]`，支持跨行与 `aligned` 等环境
+    - 图表：```` ```mermaid ```` 代码块（也支持时序图、类图、甘特图等）
+    - 普通代码块按等宽字体逐行写入，不再丢内容
+- 使用示例
+    ```python
+    from dust_utils.file_utils import MdToDocx
+
+    MdToDocx().convert(
+        md_text,
+        "out.docx",
+        styles,
+        render={
+            "mermaid_engine": "auto",  # auto / mmdc / browser
+            "latex_engine": "auto",  # auto / mathjax / matplotlib
+            "allow_online": False,  # 保持 False 即完全离线
+            "mermaid_width": None,  # 插入宽度（英寸），None 用图表自然尺寸
+            "cache_dir": None,  # 渲染缓存目录，默认系统临时目录
+        },
+    )
+    ```
+- 引擎与降级顺序
+    | 类型 | 引擎顺序 | 说明 |
+    | --- | --- | --- |
+    | Mermaid | `mmdc` → `browser` | 都离线；browser 用本机 Edge/Chrome 截图 |
+    | 公式 | `mathjax` → `matplotlib` | mathjax 完整 LaTeX；matplotlib 兜底并自动拆行 |
+    | 在线（可选） | `kroki` / `mermaid_ink` / `codecogs` | 仅 `allow_online=True` 时才会使用 |
+- 注意事项
+    - 渲染结果按内容哈希缓存，重复转换同一文档不会重复渲染
+    - 渲染失败自动降级：图表写入代码文本、公式写入原文，不会丢内容
+    - 公式里尽量避免中文，中文请放到公式外面（缺字形）
+    - 金额 `$100`、行内代码 `` `$x$` ``、代码块里的 `$` 不会被误判为公式
+    - 也可单独调用：`from dust_utils.file_utils import render_mermaid, render_latex`
 
 ## 注意事项
 - 修改 dust_utils 源码后，所有项目自动使用最新代码（得益于 editable 模式）。
