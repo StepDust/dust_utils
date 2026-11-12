@@ -126,13 +126,23 @@ def get_pack_config():
     # 是否打包（PyInstaller）
     is_frozen = getattr(sys, "frozen", False)
 
+    # 线程名称格式
+    thread_format = " | <yellow>{thread.name}</yellow>" if has_thread else ""
+
+    file_format = (
+        "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
+        "<level>{level: <8}</level>" + thread_format + " | <cyan>{name}</cyan>:"
+        "<cyan>{function}</cyan>:"
+        "<cyan>{line}</cyan> - "
+        "<level>{message}</level>"
+    )
+
     if is_frozen:
         # ✔ 打包环境：exe 所在目录
         base_folder = os.path.dirname(sys.executable)
-        format_rule = (
+        stdout_format = (
             "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
-            "<level>{level: <8}</level> | "
-            "<cyan>{name}</cyan>:"
+            "<level>{level: <8}</level> " + thread_format + "| <cyan>{name}</cyan>:"
             "<cyan>{function}</cyan>:"
             "<cyan>{line}</cyan> - "
             "<level>{message}</level>"
@@ -140,13 +150,12 @@ def get_pack_config():
     else:
         # ✔ 开发环境：项目根目录（而不是 cwd）
         base_folder = os.path.dirname(os.path.abspath(sys.argv[0]))
-        format_rule = (
+        stdout_format = (
             "<green>{time:HH:mm:ss}</green> | "
-            "<level>{level: <8}</level> | "
-            "<level>{message}</level>"
+            "<level>{level: <8}</level> " + thread_format + "| <level>{message}</level>"
         )
 
-    return base_folder, format_rule
+    return base_folder, stdout_format, file_format
 
 
 # =========================
@@ -191,7 +200,7 @@ def bind_log(
     context: dict | None = None,
     main_log: bool = False,
     *,
-    format: str | None = None,
+    file_format: str | None = None,
 ):
     """
     将当前上下文中的日志输出到指定文件，实现子任务日志分离。
@@ -222,22 +231,15 @@ def bind_log(
         "_bind_log_main_log": main_log,
     }
 
-    if format is None:
-        base_folder, format = get_pack_config()
+    if file_format is None:
+        base_folder, stdout_format, file_format = get_pack_config()
 
     sink_id = logger.add(
         file_path,
         encoding="utf-8",
         backtrace=False,
         filter=_make_route_filter(route_id),
-        format=(
-            "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
-            "<level>{level: <8}</level> | "
-            "<cyan>{name}</cyan>:"
-            "<cyan>{function}</cyan>:"
-            "<cyan>{line}</cyan> - "
-            "<level>{message}</level>"
-        ),
+        format=file_format,
     )
 
     try:
@@ -247,10 +249,23 @@ def bind_log(
         logger.remove(sink_id)
 
 
-def setup_loguru(log_folder="logs", disabled_list=[], file_name: str = ""):
-    """ """
+def setup_loguru(
+    log_folder="logs", disabled_list=[], file_name: str = "", show_thread: bool = False
+):
+    """
+    初始化 Loguru 日志。
 
-    base_folder, stdout_format = get_pack_config()
+    Args:
+        log_folder: 日志目录。
+        disabled_list: 需要过滤的日志记录器名称。
+        file_name: 日志文件名称，不包含扩展名。
+        show_thread: 是否输出线程名称。
+    """
+
+    global has_thread
+    has_thread = show_thread
+
+    base_folder, stdout_format, file_format = get_pack_config()
 
     # 与主日志文件同根目录，避免创建目录和写文件落在不同位置
     log_dir = os.path.join(base_folder, log_folder)
@@ -312,14 +327,7 @@ def setup_loguru(log_folder="logs", disabled_list=[], file_name: str = ""):
         encoding="utf-8",
         backtrace=False,
         filter=_make_main_filter(filter_lambda),
-        format=(
-            "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
-            "<level>{level: <8}</level> | "
-            "<cyan>{name}</cyan>:"
-            "<cyan>{function}</cyan>:"
-            "<cyan>{line}</cyan> - "
-            "<level>{message}</level>"
-        ),
+        format=file_format,
     )
     logger.divider = logger_divider
     logger.object = logger_object

@@ -661,6 +661,7 @@ class WordUtils:
 
     @staticmethod
     def docx_to_pdf(docx_path, pdf_path=None):
+        import pythoncom
         import win32com.client
 
         docx_path = os.path.abspath(docx_path)
@@ -670,29 +671,46 @@ class WordUtils:
 
         pdf_path = os.path.abspath(pdf_path)
 
-        wps = win32com.client.DispatchEx("Kwps.Application")
-        wps.Visible = False
-        wps.DisplayAlerts = False
+        # COM 是线程级资源：多线程里当前线程可能从未初始化过，
+        # 直接 DispatchEx 会报 -2147221008（尚未调用 CoInitialize）
+        pythoncom.CoInitialize()
+
+        wps = None
+        doc = None
+        page_count = 0
 
         try:
-            doc = wps.Documents.Open(docx_path)
+            wps = win32com.client.DispatchEx("Kwps.Application")
+            wps.Visible = False
+            wps.DisplayAlerts = False
 
-            # 强制分页
-            doc.Repaginate()
+            try:
+                doc = wps.Documents.Open(docx_path)
 
-            # 2 = wdStatisticPages
-            page_count = doc.ComputeStatistics(2)
+                # 强制分页
+                doc.Repaginate()
 
-            # 转 PDF
-            doc.ExportAsFixedFormat(
-                pdf_path,
-                17,
-            )
+                # 2 = wdStatisticPages
+                page_count = doc.ComputeStatistics(2)
 
-            doc.Close(False)
+                # 转 PDF
+                doc.ExportAsFixedFormat(
+                    pdf_path,
+                    17,
+                )
+
+                doc.Close(False)
+
+            finally:
+                if wps is not None:
+                    wps.Quit()
 
         finally:
-            wps.Quit()
+            # 先放掉 COM 代理，再释放本线程的 COM 库，
+            # 避免代理对象在已释放的线程上析构
+            doc = None
+            wps = None
+            pythoncom.CoUninitialize()
 
         return pdf_path, page_count
 

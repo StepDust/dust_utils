@@ -90,9 +90,10 @@ class PipUtils:
             return os.path.dirname(sys.executable)
         else:
             # 开发环境
-            return os.path.dirname(
-                os.path.abspath(inspect.stack()[1].filename)
-            )  # 调用者所在目录
+            return os.path.dirname(os.path.abspath(sys.argv[0]))
+            # return os.path.dirname(
+            #     os.path.abspath(inspect.stack()[1].filename)
+            # )  # 调用者所在目录
 
     @staticmethod
     def check_pip_module(module_name: str):
